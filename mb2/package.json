@@ -1,0 +1,59 @@
+{
+  "name": "piyushdhara-mathboard",
+  "version": "1.0.0",
+  "description": "PiyushDhara EduVerse — Interactive Math Teaching Software for Nepal SEE",
+  "main": "main.js",
+  "author": "PiyushDhara EduVerse",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "go":    "electron .",
+    "dev":   "electron . --dev",
+    "build:win":   "electron-builder --win",
+    "build:mac":   "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.piyushdhara.mathboard",
+    "productName": "PiyushDhara MathBoard",
+    "copyright": "Copyright © 2026 PiyushDhara EduVerse",
+    "icon": "assets/logo.png",
+    "asar": true,
+    "win": {
+      "target": [
+        { "target": "nsis",     "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "assets/logo.png",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "PiyushDhara-MathBoard-Portable.exe"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "assets/**/*",
+      "src/**/*",
+      "node_modules/**/*",
+      "!node_modules/.cache/**/*",
+      "!node_modules/electron/**/*",
+      "!node_modules/electron-builder/**/*",
+      "!dist/**/*"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    }
+  }
+}
