@@ -657,10 +657,6 @@ const Shapes = (() => {
         // Selection handles + dashed border
         if (s.selected) {
           selectionHandles(ctx, s.x - 6, s.y - 5, maxW + 12, totalH + 10);
-          // Edit hint
-          ctx.font = '11px Inter, sans-serif';
-          ctx.fillStyle = 'rgba(255,255,255,0.45)';
-          ctx.fillText('double-click to edit  |  Delete to remove', s.x, s.y + totalH + 10);
         }
         break;
       }

@@ -27,9 +27,19 @@ const Canvas = (() => {
   let dragOff   = { x:0, y:0 };
   let lineStart = null;
 
-  // Touch tap detection for double-tap (edit text)
-  let lastTap = 0;
-  let lastTapPos = null;
+  // ── Angle measurement state ──
+  let anglePoints = [];   // stores up to 3 {x,y} points
+  let angleHover  = null; // current mouse/touch position for preview
+
+  // ── Zoom / Pan state ──
+  let scale        = 1;
+  let panX         = 0;
+  let panY         = 0;
+  const MIN_SCALE  = 0.25;
+  const MAX_SCALE  = 4.0;
+  // Pinch
+  let pinchDist0   = 0;
+  let pinchScale0  = 1;
 
   // ─────────────────────────────────────────────
   function init() {
@@ -45,15 +55,33 @@ const Canvas = (() => {
     // ── Mouse events ──
     sc.addEventListener('mousedown',  onPointerDown);
     sc.addEventListener('mousemove',  onPointerMove);
+    sc.addEventListener('mousemove',  onCursorPos);
     sc.addEventListener('mouseup',    onPointerUp);
     sc.addEventListener('dblclick',   onDblClick);
-    sc.addEventListener('mousemove',  onCursorPos);
+
+    // ── Scroll wheel zoom ──
+    sc.addEventListener('wheel', onWheel, { passive: false });
 
     // ── Touch events — ALL on shape canvas ──
     sc.addEventListener('touchstart',  onTouchStart,  { passive: false });
     sc.addEventListener('touchmove',   onTouchMove,   { passive: false });
     sc.addEventListener('touchend',    onTouchEnd,    { passive: false });
     sc.addEventListener('touchcancel', onTouchCancel, { passive: false });
+
+    // ── Right panel zoom/delete buttons ──
+    setTimeout(() => {
+      const btnIn  = document.getElementById('zoom-in');
+      const btnOut = document.getElementById('zoom-out');
+      const btnRst = document.getElementById('zoom-reset');
+      const btnDel = document.getElementById('rp-delete-btn');
+      if (btnIn)  btnIn.addEventListener('click',    () => zoomBy(0.25));
+      if (btnOut) btnOut.addEventListener('click',   () => zoomBy(-0.25));
+      if (btnRst) btnRst.addEventListener('click',   () => zoomReset());
+      if (btnDel) {
+        btnDel.addEventListener('click',   () => deleteShape());
+        btnDel.addEventListener('touchend', e => { e.preventDefault(); deleteShape(); });
+      }
+    }, 400);
 
     drawGrid();
     renderShapes();
@@ -85,8 +113,59 @@ const Canvas = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // GRID
+  // ZOOM & PAN
   // ─────────────────────────────────────────────
+  function onWheel(e) {
+    e.preventDefault();
+    const rect  = document.getElementById('shape-canvas').getBoundingClientRect();
+    const mx    = e.clientX - rect.left;
+    const my    = e.clientY - rect.top;
+    const delta = e.deltaY < 0 ? 0.12 : -0.12;
+    applyZoom(scale + delta, mx, my);
+  }
+
+  function zoomBy(delta) {
+    applyZoom(scale + delta, W / 2, H / 2);
+  }
+
+  function zoomReset() {
+    scale = 1; panX = 0; panY = 0;
+    applyTransform();
+    updateZoomLabel();
+  }
+
+  function applyZoom(newScale, cx, cy) {
+    newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+    const factor = newScale / scale;
+    panX = cx - factor * (cx - panX);
+    panY = cy - factor * (cy - panY);
+    scale = newScale;
+    applyTransform();
+    updateZoomLabel();
+  }
+
+  // Apply CSS transform to ALL canvases — pen, shapes, grid, everything zooms together
+  function applyTransform() {
+    const t = `translate(${panX}px,${panY}px) scale(${scale})`;
+    ['grid-canvas','shape-canvas','draw-canvas','ui-canvas'].forEach(id => {
+      const c = document.getElementById(id);
+      if (c) { c.style.transformOrigin = '0 0'; c.style.transform = t; }
+    });
+    const pc = document.getElementById('preview-canvas');
+    if (pc) { pc.style.transformOrigin = '0 0'; pc.style.transform = t; }
+  }
+
+  function updateZoomLabel() {
+    const lbl = document.getElementById('zoom-label');
+    if (lbl) lbl.textContent = Math.round(scale * 100) + '%';
+  }
+
+  // Convert screen coords → canvas coords (world space)
+  function screenToWorld(sx, sy) {
+    return { x: (sx - panX) / scale, y: (sy - panY) / scale };
+  }
+
+  // drawGrid — no zoom transform needed (grid is behind CSS-transformed canvases)
   function drawGrid() {
     gridCtx.clearRect(0, 0, W, H);
     gridCtx.fillStyle = currentBoardColor.bg;
@@ -99,11 +178,12 @@ const Canvas = (() => {
         gridCtx.arc(x, y, 1.3, 0, Math.PI*2);
         gridCtx.fill();
       }
-    gridCtx.save();
-    gridCtx.globalAlpha = 0.04;
     const logo = document.getElementById('brand-logo');
-    if (logo && logo.complete) gridCtx.drawImage(logo, W-140, H-140, 120, 120);
-    gridCtx.restore();
+    if (logo && logo.complete) {
+      gridCtx.globalAlpha = 0.04;
+      gridCtx.drawImage(logo, W-140, H-140, 120, 120);
+      gridCtx.globalAlpha = 1;
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -124,8 +204,9 @@ const Canvas = (() => {
     document.getElementById('fb-expr').textContent   = formula.expr;
     document.getElementById('fb-result').textContent = formula.result;
     const b  = Shapes.getBounds(selected);
-    const bx = Math.min(b.x + b.w + 12, W - 215);
-    const by = Math.max(Math.min(b.y - 10, H - 120), 10);
+    // Adjust badge position for zoom/pan
+    const bx = Math.min((b.x + b.w) * scale + panX + 12, W - 215);
+    const by = Math.max(Math.min(b.y * scale + panY - 10, H - 120), 10);
     badge.style.left = bx + 'px';
     badge.style.top  = by + 'px';
     badge?.classList.remove('hidden');
@@ -187,6 +268,8 @@ const Canvas = (() => {
     saveHistory();
     shapes = shapes.filter(s => s.id !== selected.id);
     selected = null;
+    const btn = document.getElementById('touch-delete-btn');
+    if (btn) btn.style.display = 'none';
     renderShapes();
     UI.updateStatus();
     UI.hidePropPanel();
@@ -201,7 +284,12 @@ const Canvas = (() => {
     UI.showPropPanel(selected);
   }
 
-  function deselectAll() { selectShape(null); UI.hidePropPanel(); }
+  function deselectAll() {
+    selectShape(null);
+    UI.hidePropPanel();
+    const btn = document.getElementById('touch-delete-btn');
+    if (btn) btn.style.display = 'none';
+  }
 
   function updateProp(key, value) {
     if (!selected) return;
@@ -239,13 +327,13 @@ const Canvas = (() => {
   function getPosFromEvent(e) {
     const sc = document.getElementById('shape-canvas');
     const r  = sc.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    return screenToWorld(e.clientX - r.left, e.clientY - r.top);
   }
 
   function getPosFromTouch(touch) {
     const sc = document.getElementById('shape-canvas');
     const r  = sc.getBoundingClientRect();
-    return { x: touch.clientX - r.left, y: touch.clientY - r.top };
+    return screenToWorld(touch.clientX - r.left, touch.clientY - r.top);
   }
 
   // ─────────────────────────────────────────────
@@ -275,9 +363,17 @@ const Canvas = (() => {
   // TOUCH HANDLERS
   // ─────────────────────────────────────────────
   function onTouchStart(e) {
-    const tool = App.currentTool;
+    // ── Two-finger pinch zoom ──
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      pinchDist0  = Math.sqrt(dx*dx + dy*dy);
+      pinchScale0 = scale;
+      return;
+    }
 
-    // Single finger
+    const tool = App.currentTool;
     if (e.touches.length === 1) {
       const t   = e.touches[0];
       const pos = getPosFromTouch(t);
@@ -287,7 +383,6 @@ const Canvas = (() => {
       if (lastTapPos && now - lastTap < 320
           && Math.abs(pos.x - lastTapPos.x) < 30
           && Math.abs(pos.y - lastTapPos.y) < 30) {
-        // Double tap
         const hit = hitTest(pos.x, pos.y, 20);
         if (hit && hit.type === 'text-block') {
           e.preventDefault();
@@ -300,20 +395,30 @@ const Canvas = (() => {
       lastTap    = now;
       lastTapPos = pos;
 
-      // Pen / highlighter / eraser — pass to Drawing
       if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
-        // Drawing handles its own touch on draw-canvas — but draw-canvas
-        // has pointer-events:none when not in draw mode, so we route here
-        Drawing.touchStart(t);
-        return;
+        Drawing.touchStart(t); return;
       }
-
       e.preventDefault();
       handleDown(pos);
     }
   }
 
   function onTouchMove(e) {
+    // ── Pinch zoom ──
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const dx   = e.touches[0].clientX - e.touches[1].clientX;
+      const dy   = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const sc   = document.getElementById('shape-canvas');
+      const r    = sc.getBoundingClientRect();
+      // Midpoint of two fingers
+      const mx   = ((e.touches[0].clientX + e.touches[1].clientX) / 2) - r.left;
+      const my   = ((e.touches[0].clientY + e.touches[1].clientY) / 2) - r.top;
+      applyZoom(pinchScale0 * (dist / pinchDist0), mx, my);
+      return;
+    }
+
     const tool = App.currentTool;
     if (e.touches.length === 1) {
       const t   = e.touches[0];
@@ -348,6 +453,19 @@ const Canvas = (() => {
   function handleDown(pos) {
     const tool = App.currentTool;
 
+    // ── ANGLE TOOL ──
+    if (tool === 'angle') {
+      anglePoints.push({ x: pos.x, y: pos.y });
+      if (anglePoints.length === 3) {
+        drawAngleMeasurement(anglePoints[0], anglePoints[1], anglePoints[2], true);
+        anglePoints = [];  // reset for next measurement
+        angleHover  = null;
+      } else {
+        drawAnglePreview();
+      }
+      return;
+    }
+
     if (tool === 'text') {
       const hit = hitTest(pos.x, pos.y, 20);
       if (hit && hit.type === 'text-block') { selectShape(hit); Drawing.editText(hit); }
@@ -379,6 +497,13 @@ const Canvas = (() => {
       renderShapes();
     }
     const tool = App.currentTool;
+
+    // Angle tool preview
+    if (tool === 'angle' && anglePoints.length > 0) {
+      angleHover = pos;
+      drawAnglePreview();
+    }
+
     if (lineStart && (tool === 'line' || tool === 'dashed' || tool === 'dotted' ||
         tool === 'arrow' || tool === 'dbl-arrow')) {
       Drawing.previewLine(lineStart, pos);
@@ -394,8 +519,165 @@ const Canvas = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // SERIALISE / SNAPSHOT
+  // ANGLE MEASUREMENT
+  // Points: A (first arm), B (vertex), C (second arm)
   // ─────────────────────────────────────────────
+  function calcAngle(A, B, C) {
+    const v1 = { x: A.x - B.x, y: A.y - B.y };
+    const v2 = { x: C.x - B.x, y: C.y - B.y };
+    const dot = v1.x*v2.x + v1.y*v2.y;
+    const mag = Math.sqrt((v1.x**2 + v1.y**2)) * Math.sqrt((v2.x**2 + v2.y**2));
+    if (mag === 0) return 0;
+    return Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180 / Math.PI;
+  }
+
+  function drawAnglePreview() {
+    // Use ui-canvas for live preview (doesn't affect draw-canvas)
+    const uc  = document.getElementById('ui-canvas');
+    if (!uc) return;
+    uc.style.pointerEvents = 'none';
+    const ctx = uc.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    const color = '#c9a84c';
+    ctx.strokeStyle = color;
+    ctx.fillStyle   = color;
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([5, 4]);
+
+    // Draw placed points
+    anglePoints.forEach((p, i) => {
+      ctx.fillStyle = i === 0 ? '#4e9af1' : i === 1 ? '#f1a94e' : '#4ef17a';
+      ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '600 10px Segoe UI, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(['A','B','C'][i], p.x, p.y);
+    });
+
+    // Draw lines to hover point
+    if (angleHover && anglePoints.length >= 1) {
+      ctx.strokeStyle = 'rgba(201,168,76,0.5)';
+      ctx.beginPath();
+      ctx.moveTo(anglePoints[anglePoints.length-1].x, anglePoints[anglePoints.length-1].y);
+      ctx.lineTo(angleHover.x, angleHover.y);
+      ctx.stroke();
+    }
+
+    // Draw connecting line between point 1 and 2
+    if (anglePoints.length === 2 && angleHover) {
+      ctx.strokeStyle = 'rgba(201,168,76,0.5)';
+      ctx.beginPath();
+      ctx.moveTo(anglePoints[0].x, anglePoints[0].y);
+      ctx.lineTo(anglePoints[1].x, anglePoints[1].y);
+      ctx.stroke();
+      // Live angle preview
+      const deg = calcAngle(anglePoints[0], anglePoints[1], angleHover);
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(8,15,31,0.9)';
+      const lx = anglePoints[1].x + 20, ly = anglePoints[1].y - 20;
+      ctx.fillRect(lx - 4, ly - 16, 80, 22);
+      ctx.fillStyle = '#e8c96b';
+      ctx.font = '600 13px Consolas, monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${deg.toFixed(1)}°`, lx, ly - 5);
+    }
+
+    // Instruction hint
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(201,168,76,0.75)';
+    ctx.font = '12px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    const hints = ['Click point A (first arm)', 'Click B (vertex)', 'Click C (second arm)'];
+    ctx.fillText(hints[anglePoints.length] || '', W/2, H - 10);
+  }
+
+  function drawAngleMeasurement(A, B, C, permanent) {
+    const deg   = calcAngle(A, B, C);
+    const ctx   = getDrawCtx();
+
+    // Clear ui-canvas preview
+    const uc = document.getElementById('ui-canvas');
+    if (uc) uc.getContext('2d').clearRect(0, 0, W, H);
+
+    ctx.save();
+
+    // Draw the two arms
+    const armColor = App.currentColor;
+    ctx.strokeStyle = armColor;
+    ctx.lineWidth   = 2;
+    ctx.setLineDash([]);
+    ctx.lineCap = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y);
+    ctx.moveTo(C.x, C.y); ctx.lineTo(B.x, B.y);
+    ctx.stroke();
+
+    // Arc at vertex
+    const a1    = Math.atan2(A.y - B.y, A.x - B.x);
+    const a2    = Math.atan2(C.y - B.y, C.x - B.x);
+    const arcR  = 28;
+    ctx.strokeStyle = '#f1a94e';
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    ctx.arc(B.x, B.y, arcR, a1, a2, a2 - a1 > Math.PI);
+    ctx.stroke();
+
+    // Points dots
+    [[A,'A','#4e9af1'],[B,'B','#f1a94e'],[C,'C','#4ef17a']].forEach(([p, lbl, col]) => {
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 9px Segoe UI, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(lbl, p.x, p.y);
+    });
+
+    // Angle label at vertex
+    const midA  = (a1 + a2) / 2;
+    const lx    = B.x + (arcR + 22) * Math.cos(midA);
+    const ly    = B.y + (arcR + 22) * Math.sin(midA);
+    const label = `${deg.toFixed(2)}°`;
+
+    // Background pill
+    ctx.font = '700 14px Consolas, monospace';
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(8,15,31,0.92)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(lx - tw/2 - 8, ly - 12, tw + 16, 24, 6);
+    else ctx.rect(lx - tw/2 - 8, ly - 12, tw + 16, 24);
+    ctx.fill();
+    ctx.strokeStyle = '#c9a84c';
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = '#e8c96b';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, lx, ly);
+
+    // Classify angle
+    const classify = deg < 90 ? 'Acute' : deg === 90 ? 'Right' : deg < 180 ? 'Obtuse' : 'Reflex';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '10px Segoe UI, sans-serif';
+    ctx.fillText(classify, lx, ly + 16);
+
+    ctx.restore();
+    saveHistory();
+
+    App.showToast(`∠ABC = ${deg.toFixed(2)}° (${classify === 'Right' ? '⊾ Right angle!' : classify})`);
+  }
+
+  // Reset angle tool when switching away
+  function resetAngleTool() {
+    anglePoints = [];
+    angleHover  = null;
+    const uc = document.getElementById('ui-canvas');
+    if (uc) uc.getContext('2d').clearRect(0, 0, W, H);
+  }
   function getShapes()   { return JSON.parse(JSON.stringify(shapes)); }
   function getDrawData() {
     try { return drawCtx.getImageData(0, 0, W, H); } catch(e) { return null; }
@@ -445,12 +727,15 @@ const Canvas = (() => {
   function getDrawCtx()    { return drawCtx; }
   function getCanvasSize() { return { W, H }; }
 
+  function getTransform() { return { panX, panY, scale }; }
+
   return {
     init, resize, renderShapes, drawGrid, setBoardColor,
     addShape, addTextShape, selectShape, deselectAll, hitTest, deleteShape,
-    updateProp, clearAll, undo, redo, saveHistory,
+    updateProp, clearAll, undo, redo, saveHistory, resetAngleTool,
     getState, loadState, snapshot, snapshotJpeg,
     getShapeCount, getDrawCtx, getCanvasSize,
-    getShapes, getDrawData, loadPageState
+    getShapes, getDrawData, loadPageState,
+    zoomBy, zoomReset, getTransform,
   };
 })();

@@ -43,6 +43,7 @@ const App = (() => {
     // Wire overlay buttons — done here so globals are guaranteed loaded
     $('btn-graph')   && $('btn-graph').addEventListener('click',   () => GraphEngine.toggle());
     $('btn-library') && $('btn-library').addEventListener('click', () => Library.toggle());
+    $('btn-timer')   && $('btn-timer').addEventListener('click',   () => Timer.toggle());
 
     // Keyboard
     document.addEventListener('keydown', onKey);
@@ -138,6 +139,10 @@ const App = (() => {
   // TOOL
   // ─────────────────────────────────────────────
   function setTool(tool) {
+    // Reset angle tool if leaving it
+    if (currentTool === 'angle' && tool !== 'angle') {
+      Canvas.resetAngleTool();
+    }
     currentTool = tool;
     document.querySelectorAll('.tool-btn[data-tool]').forEach(b => {
       b.classList.toggle('active', b.dataset.tool === tool);
@@ -181,8 +186,39 @@ const App = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // RECORD
+  // FULLSCREEN
   // ─────────────────────────────────────────────
+  function toggleFullscreen() {
+    const btn = $('btn-fullscreen');
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {
+        // Electron fallback
+        if (window.electronAPI && window.require) {
+          const { getCurrentWindow } = window.require('@electron/remote') || {};
+          if (getCurrentWindow) getCurrentWindow().setFullScreen(true);
+        }
+      });
+      if (btn) btn.innerHTML = `
+        <svg viewBox="0 0 20 20" fill="none"><path d="M8 3H3v5M17 3h-5v0M3 12v5h5M12 17h5v-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Exit Full`;
+    } else {
+      document.exitFullscreen();
+      if (btn) btn.innerHTML = `
+        <svg viewBox="0 0 20 20" fill="none"><path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Fullscreen`;
+    }
+  }
+
+  // Listen for fullscreen change (e.g. user presses F11 or Esc)
+  document.addEventListener('fullscreenchange', () => {
+    const btn = $('btn-fullscreen');
+    if (!btn) return;
+    if (document.fullscreenElement) {
+      btn.innerHTML = `<svg viewBox="0 0 20 20" fill="none"><path d="M8 3H3v5M17 3h-5v0M3 12v5h5M12 17h5v-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> Exit Full`;
+    } else {
+      btn.innerHTML = `<svg viewBox="0 0 20 20" fill="none"><path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg> Fullscreen`;
+    }
+  });
   function toggleRecord() {
     recording = !recording;
     const btn = $('btn-rec');
@@ -307,6 +343,7 @@ const App = (() => {
   // ─────────────────────────────────────────────
   function onKey(e) {
     const tag = document.activeElement?.tagName;
+    // Allow delete even when canvas is focused, but not when typing in inputs
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (e.ctrlKey || e.metaKey) {
       if (e.key === 'z') { e.preventDefault(); Canvas.undo(); }
@@ -314,10 +351,18 @@ const App = (() => {
       if (e.key === 's') { e.preventDefault(); saveBoard(); }
       return;
     }
-    const map = { v:'select', p:'pen', h:'highlighter', t:'text', l:'line', d:'dashed', a:'arrow', e:'eraser' };
+    const map = { v:'select', p:'pen', h:'highlighter', t:'text', l:'line', d:'dashed', a:'arrow', e:'eraser', g:'angle' };
     if (map[e.key]) setTool(map[e.key]);
-    if (e.key === 'Escape') { setTool('select'); Canvas.deselectAll(); }
-    if (e.key === 'Delete' || e.key === 'Backspace') Canvas.deleteShape();
+    if (e.key === 'Escape') {
+      setTool('select');
+      Canvas.deselectAll();
+      Canvas.resetAngleTool();
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      Canvas.deleteShape();
+    }
+    if (e.key === 'F11') { e.preventDefault(); toggleFullscreen(); }
   }
 
   // ─────────────────────────────────────────────
@@ -357,6 +402,7 @@ const App = (() => {
     toggleSidebar, toggleRPanel,
     addPage, switchPage, deletePage,
     toggleRecord, takeSnapshot, exportPDF,
+    toggleFullscreen,
     saveBoard, loadBoard, clearBoard,
     saveCurrent, getBoardState, loadBoardState,
     showToast,

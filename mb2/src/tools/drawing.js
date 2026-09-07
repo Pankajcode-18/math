@@ -218,58 +218,106 @@ const Drawing = (() => {
     const fontSize = Math.max(18, App.penSize * 5 + 12);
     const color    = App.currentColor;
 
+    // Convert world coords to screen coords for positioning
+    const zone    = document.getElementById('canvas-zone');
+    const zoneRect = zone.getBoundingClientRect();
+    const { panX, panY, scale } = Canvas.getTransform();
+    const screenX = x * scale + panX + zoneRect.left;
+    const screenY = y * scale + panY + zoneRect.top;
+
     const editor = document.createElement('div');
     editor.id = 'text-editor-box';
     editor.style.cssText = `
-      position:absolute; left:${x}px; top:${y}px;
-      min-width:180px; z-index:100;
-      background:rgba(0,0,0,0.6);
+      position:fixed;
+      left:${Math.max(8, Math.min(screenX, window.innerWidth - 300))}px;
+      top:${Math.max(8, Math.min(screenY, window.innerHeight - 200))}px;
+      min-width:220px;
+      max-width:500px;
+      z-index:9999;
+      background:rgba(7,16,31,0.97);
       border:2px solid ${color};
-      border-radius:8px; padding:8px 12px;
-      box-shadow:0 6px 28px rgba(0,0,0,0.6);
-      touch-action:none;
+      border-radius:10px;
+      padding:12px 14px;
+      box-shadow:0 8px 40px rgba(0,0,0,0.7);
     `;
 
+    // Textarea — fully editable, touch keyboard friendly
     const ta = document.createElement('textarea');
     ta.style.cssText = `
-      width:100%; min-height:${fontSize+8}px;
-      background:transparent; border:none; outline:none;
-      color:${color}; font-family:'Inter',sans-serif;
-      font-size:${fontSize}px; font-weight:600;
-      resize:both; line-height:1.4;
+      display:block;
+      width:100%;
+      min-height:${fontSize + 12}px;
+      max-height:300px;
+      background:rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.15);
+      border-radius:6px;
+      outline:none;
+      color:${color};
+      font-family:'Segoe UI',sans-serif;
+      font-size:${fontSize}px;
+      font-weight:600;
+      line-height:1.4;
+      padding:6px 8px;
+      resize:vertical;
       caret-color:${color};
+      box-sizing:border-box;
+      -webkit-user-select:text;
+      user-select:text;
       touch-action:auto;
-      -webkit-user-select:text; user-select:text;
     `;
     ta.placeholder = 'Type here…';
     if (existingShape) ta.value = existingShape.text || '';
 
+    // Hint
     const hint = document.createElement('div');
-    hint.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.38);margin-top:5px;font-family:Inter,sans-serif;user-select:none';
+    hint.style.cssText = `
+      font-size:10px; color:rgba(255,255,255,0.35);
+      margin-top:6px; font-family:'Segoe UI',sans-serif;
+      user-select:none;
+    `;
     hint.textContent = 'Ctrl+Enter = place  |  Esc = cancel';
 
-    // Touch keyboards: show confirm button for mobile/smartboard
+    // Big touch-friendly confirm button
     const confirmBtn = document.createElement('button');
-    confirmBtn.textContent = '✓ Place Text';
+    confirmBtn.innerHTML = '✓  Place Text';
     confirmBtn.style.cssText = `
-      display:block; width:100%; margin-top:8px;
-      padding:10px; border-radius:6px;
+      display:block; width:100%; margin-top:10px;
+      padding:14px; border-radius:8px;
       background:rgba(201,168,76,0.2);
-      border:1.5px solid rgba(201,168,76,0.5);
-      color:#e8c96b; font-size:14px; font-weight:600;
-      cursor:pointer; font-family:Inter,sans-serif;
+      border:1.5px solid rgba(201,168,76,0.6);
+      color:#e8c96b; font-size:16px; font-weight:700;
+      cursor:pointer; font-family:'Segoe UI',sans-serif;
       touch-action:manipulation;
+      -webkit-tap-highlight-color:transparent;
+      letter-spacing:.03em;
+    `;
+
+    // Cancel button
+    const cancelBtn = document.createElement('button');
+    cancelBtn.innerHTML = '✕  Cancel';
+    cancelBtn.style.cssText = `
+      display:block; width:100%; margin-top:7px;
+      padding:10px; border-radius:8px;
+      background:rgba(239,68,68,0.1);
+      border:1px solid rgba(239,68,68,0.3);
+      color:#fca5a5; font-size:13px; font-weight:600;
+      cursor:pointer; font-family:'Segoe UI',sans-serif;
+      touch-action:manipulation;
+      -webkit-tap-highlight-color:transparent;
     `;
 
     editor.appendChild(ta);
     editor.appendChild(hint);
     editor.appendChild(confirmBtn);
-    document.getElementById('canvas-zone').appendChild(editor);
+    editor.appendChild(cancelBtn);
+    document.body.appendChild(editor);  // ← attach to BODY not canvas-zone
 
-    // Focus — works on both mouse and touch
+    // Focus immediately
     setTimeout(() => {
       ta.focus();
-      if (existingShape) ta.setSelectionRange(ta.value.length, ta.value.length);
+      if (existingShape) {
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      }
     }, 50);
 
     function commitAndClose() {
@@ -288,34 +336,35 @@ const Drawing = (() => {
       closeTextEditor();
     }
 
-    // Confirm button (for touch)
-    confirmBtn.addEventListener('click',       commitAndClose);
+    confirmBtn.addEventListener('click',    commitAndClose);
     confirmBtn.addEventListener('touchend', e => { e.preventDefault(); commitAndClose(); });
 
-    // Keyboard shortcuts (for mouse/keyboard)
+    cancelBtn.addEventListener('click',    closeTextEditor);
+    cancelBtn.addEventListener('touchend', e => { e.preventDefault(); closeTextEditor(); });
+
     ta.addEventListener('keydown', e => {
       e.stopPropagation();
-      if (e.key === 'Escape')                   { closeTextEditor(); return; }
-      if (e.key === 'Enter' && e.ctrlKey)       { e.preventDefault(); commitAndClose(); }
+      if (e.key === 'Escape')            { closeTextEditor(); return; }
+      if (e.key === 'Enter' && e.ctrlKey){ e.preventDefault(); commitAndClose(); }
     });
 
-    // Auto-grow
+    // Auto-grow textarea
     ta.addEventListener('input', () => {
       ta.style.height = 'auto';
-      ta.style.height = ta.scrollHeight + 'px';
+      ta.style.height = Math.min(ta.scrollHeight, 300) + 'px';
     });
 
     // Click/tap outside to cancel
-    function outsideHandler(ev) {
+    function outside(ev) {
       if (!editor.contains(ev.target)) {
-        document.removeEventListener('mousedown', outsideHandler);
-        document.removeEventListener('touchstart', outsideHandler);
+        document.removeEventListener('mousedown',  outside);
+        document.removeEventListener('touchstart', outside);
         closeTextEditor();
       }
     }
     setTimeout(() => {
-      document.addEventListener('mousedown',  outsideHandler);
-      document.addEventListener('touchstart', outsideHandler, { passive: true });
+      document.addEventListener('mousedown',  outside);
+      document.addEventListener('touchstart', outside, { passive: true });
     }, 120);
   }
 
@@ -346,6 +395,7 @@ const Drawing = (() => {
     const dc       = getDrawCanvas();
     const useMouse = (tool === 'pen' || tool === 'highlighter' || tool === 'eraser');
     dc.style.pointerEvents = useMouse ? 'auto' : 'none';
+    // angle tool uses shape canvas (handled in canvas.js handleDown/Move)
   }
 
   return {

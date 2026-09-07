@@ -59,8 +59,13 @@
     <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
     Clear
   </button>
-  <button class="tb-btn rec" id="btn-rec" onclick="App.toggleRecord()">
-    <span class="rec-dot"></span> Record
+  <button class="tb-btn timer-btn" id="btn-timer" title="Countdown Timer">
+    <svg viewBox="0 0 20 20" fill="none"><circle cx="10" cy="11" r="7" stroke="currentColor" stroke-width="1.5"/><path d="M10 7v4l2.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M7.5 2.5h5M10 2.5v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    Timer
+  </button>
+  <button class="tb-btn" id="btn-fullscreen" onclick="App.toggleFullscreen()" title="Fullscreen (F11)">
+    <svg viewBox="0 0 20 20" fill="none"><path d="M3 8V3h5M17 8V3h-5M3 12v5h5M17 12v5h-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Fullscreen
   </button>
 </header>
 
@@ -124,6 +129,16 @@
     <button class="tool-btn" data-tool="eraser" title="Eraser (E)">
       <svg viewBox="0 0 22 22" fill="none"><path d="M4 17h14M7 17L4 13l8-8 6 6-5 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span>Erase</span>
+    </button>
+    <button class="tool-btn" data-tool="angle" title="Angle Measure (G)">
+      <svg viewBox="0 0 22 22" fill="none">
+        <path d="M4 18 L18 18 L4 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M4 18 L14 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M4 18 L18 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M8 18 A4 4 0 0 1 6.5 14.5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+        <text x="9" y="16" font-size="5" fill="currentColor" font-family="sans-serif">θ</text>
+      </svg>
+      <span>Angle</span>
     </button>
     <div class="t-sep"></div>
     <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)">
@@ -190,6 +205,37 @@
     <div class="rp-sec" id="props-sec" style="display:none">
       <div class="rp-lbl">Dimensions <span style="font-size:8px;opacity:.5;font-weight:400;letter-spacing:.05em;text-transform:none">— type any value, press Enter</span></div>
       <div id="props-content"></div>
+    </div>
+
+    <!-- Zoom controls — always visible -->
+    <div class="rp-sec">
+      <div class="rp-lbl">Zoom</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <button id="zoom-out" style="width:38px;height:38px;border-radius:7px;border:1px solid rgba(201,168,76,.3);background:rgba(201,168,76,.08);color:#e8c96b;font-size:20px;font-weight:700;cursor:pointer;touch-action:manipulation;flex-shrink:0">−</button>
+        <div style="flex:1;text-align:center">
+          <span id="zoom-label" style="font-family:'Consolas',monospace;font-size:13px;font-weight:600;color:#e8c96b">100%</span>
+        </div>
+        <button id="zoom-in" style="width:38px;height:38px;border-radius:7px;border:1px solid rgba(201,168,76,.3);background:rgba(201,168,76,.08);color:#e8c96b;font-size:20px;font-weight:700;cursor:pointer;touch-action:manipulation;flex-shrink:0">＋</button>
+      </div>
+      <button id="zoom-reset" style="width:100%;padding:7px;border-radius:6px;border:1px solid rgba(201,168,76,.2);background:rgba(201,168,76,.05);color:rgba(201,168,76,.7);font-size:11px;font-weight:600;cursor:pointer;font-family:'Segoe UI',sans-serif;touch-action:manipulation">Reset 100%</button>
+    </div>
+
+    <!-- Delete selected — always visible at bottom -->
+    <div class="rp-sec" style="margin-top:auto;padding-bottom:16px">
+      <button id="rp-delete-btn" style="
+        width:100%;padding:12px;border-radius:8px;
+        border:1.5px solid rgba(239,68,68,.5);
+        background:rgba(239,68,68,.12);color:#fca5a5;
+        font-size:14px;font-weight:700;cursor:pointer;
+        font-family:'Segoe UI',sans-serif;touch-action:manipulation;
+        display:flex;align-items:center;justify-content:center;gap:8px;
+        transition:all .15s;
+      ">
+        <svg viewBox="0 0 18 18" fill="none" style="width:16px;height:16px">
+          <path d="M3 5h12M7 5V3h4v2M6 8v6M9 8v6M12 8v6M4 5l1 10h8l1-10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Delete Selected
+      </button>
     </div>
   </div>
 
@@ -2032,6 +2078,304 @@ const Library = (() => {
 })();
 
 window.Library = Library;
+
+// ═══════════════════════════════════════════════════════════
+// TIMER — Floating countdown widget on the board
+// ═══════════════════════════════════════════════════════════
+const Timer = (() => {
+  let timerEl   = null;
+  let interval  = null;
+  let remaining = 0;
+  let running   = false;
+  let total     = 0;
+
+  const PRESETS = [
+    { label:'1 min',  secs: 60  },
+    { label:'2 min',  secs: 120 },
+    { label:'3 min',  secs: 180 },
+    { label:'5 min',  secs: 300 },
+    { label:'10 min', secs: 600 },
+    { label:'15 min', secs: 900 },
+    { label:'Custom', secs: 0   },
+  ];
+
+  function show() {
+    if (timerEl) { timerEl.style.display = 'flex'; return; }
+    build();
+  }
+
+  function hide() {
+    if (timerEl) timerEl.style.display = 'none';
+  }
+
+  function toggle() {
+    if (!timerEl || timerEl.style.display === 'none') show();
+    else hide();
+  }
+
+  function build() {
+    timerEl = document.createElement('div');
+    timerEl.id = 'timer-widget';
+    timerEl.style.cssText = `
+      position:fixed; top:80px; right:20px; z-index:500;
+      background:rgba(7,16,31,0.97);
+      border:1.5px solid rgba(201,168,76,0.5);
+      border-radius:14px; padding:16px 18px;
+      display:flex; flex-direction:column; gap:10px;
+      min-width:200px;
+      box-shadow:0 8px 40px rgba(0,0,0,0.6);
+      font-family:'Segoe UI',sans-serif;
+      user-select:none;
+      cursor:move;
+    `;
+
+    timerEl.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:11px;font-weight:700;letter-spacing:.14em;
+          text-transform:uppercase;color:#c9a84c;opacity:.8">⏱ Timer</span>
+        <button id="timer-close" style="background:none;border:none;color:rgba(255,255,255,.4);
+          font-size:16px;cursor:pointer;padding:0 2px;line-height:1">×</button>
+      </div>
+
+      <!-- Clock display -->
+      <div id="timer-display" style="
+        font-family:'Consolas',monospace;font-size:42px;font-weight:700;
+        color:#e8c96b;text-align:center;letter-spacing:.05em;
+        text-shadow:0 0 20px rgba(201,168,76,0.4);
+        padding:8px 0;
+      ">05:00</div>
+
+      <!-- Progress bar -->
+      <div style="height:5px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden">
+        <div id="timer-bar" style="height:100%;width:100%;
+          background:linear-gradient(90deg,#c9a84c,#e8c96b);
+          border-radius:3px;transition:width .9s linear"></div>
+      </div>
+
+      <!-- Presets -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px">
+        ${PRESETS.map((p,i) => `
+          <button class="timer-preset" data-secs="${p.secs}" data-idx="${i}" style="
+            padding:5px 4px;border-radius:6px;
+            border:1px solid rgba(201,168,76,0.25);
+            background:rgba(201,168,76,0.07);color:#c9a84c;
+            font-size:11px;font-weight:600;cursor:pointer;
+            font-family:'Segoe UI',sans-serif;touch-action:manipulation">
+            ${p.label}
+          </button>`).join('')}
+      </div>
+
+      <!-- Custom input (hidden by default) -->
+      <div id="timer-custom" style="display:none;gap:6px;align-items:center">
+        <input id="timer-custom-min" type="number" min="0" max="99" value="5"
+          style="width:50px;background:rgba(255,255,255,.08);border:1px solid rgba(201,168,76,.3);
+          border-radius:5px;color:#fff;font-size:14px;text-align:center;padding:4px;outline:none;font-family:Consolas">
+        <span style="color:rgba(255,255,255,.4);font-size:13px">min</span>
+        <input id="timer-custom-sec" type="number" min="0" max="59" value="0"
+          style="width:50px;background:rgba(255,255,255,.08);border:1px solid rgba(201,168,76,.3);
+          border-radius:5px;color:#fff;font-size:14px;text-align:center;padding:4px;outline:none;font-family:Consolas">
+        <span style="color:rgba(255,255,255,.4);font-size:13px">sec</span>
+        <button id="timer-set-custom" style="
+          padding:5px 8px;border-radius:5px;border:1px solid rgba(34,197,94,.4);
+          background:rgba(34,197,94,.1);color:#86efac;font-size:11px;font-weight:600;
+          cursor:pointer;font-family:'Segoe UI',sans-serif">Set</button>
+      </div>
+
+      <!-- Controls -->
+      <div style="display:flex;gap:7px">
+        <button id="timer-start" style="
+          flex:1;padding:9px;border-radius:7px;
+          border:1.5px solid rgba(34,197,94,.5);
+          background:rgba(34,197,94,.12);color:#86efac;
+          font-size:13px;font-weight:700;cursor:pointer;
+          font-family:'Segoe UI',sans-serif;touch-action:manipulation">▶ Start</button>
+        <button id="timer-pause" style="
+          flex:1;padding:9px;border-radius:7px;
+          border:1.5px solid rgba(201,168,76,.4);
+          background:rgba(201,168,76,.1);color:#e8c96b;
+          font-size:13px;font-weight:700;cursor:pointer;
+          font-family:'Segoe UI',sans-serif;touch-action:manipulation">⏸ Pause</button>
+        <button id="timer-reset" style="
+          padding:9px 12px;border-radius:7px;
+          border:1px solid rgba(239,68,68,.3);
+          background:rgba(239,68,68,.08);color:#fca5a5;
+          font-size:13px;cursor:pointer;
+          font-family:'Segoe UI',sans-serif;touch-action:manipulation">↺</button>
+      </div>
+    `;
+
+    document.body.appendChild(timerEl);
+    setTime(300); // default 5 min
+    wireEvents();
+    makeDraggable(timerEl);
+  }
+
+  function wireEvents() {
+    document.getElementById('timer-close').addEventListener('click', hide);
+    document.getElementById('timer-start').addEventListener('click', start);
+    document.getElementById('timer-pause').addEventListener('click', pause);
+    document.getElementById('timer-reset').addEventListener('click', reset);
+    document.getElementById('timer-set-custom').addEventListener('click', setCustom);
+
+    // Preset buttons
+    document.querySelectorAll('.timer-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const secs = parseInt(btn.dataset.secs);
+        const customDiv = document.getElementById('timer-custom');
+        if (secs === 0) {
+          customDiv.style.display = 'flex';
+        } else {
+          customDiv.style.display = 'none';
+          setTime(secs);
+          if (running) { clearInterval(interval); running = false; }
+        }
+        // Highlight active preset
+        document.querySelectorAll('.timer-preset').forEach(b => {
+          b.style.background = 'rgba(201,168,76,0.07)';
+          b.style.borderColor = 'rgba(201,168,76,0.25)';
+          b.style.color = '#c9a84c';
+        });
+        btn.style.background = 'rgba(201,168,76,0.22)';
+        btn.style.borderColor = 'rgba(201,168,76,0.6)';
+        btn.style.color = '#e8c96b';
+      });
+    });
+
+    // Prevent keydown propagation in custom inputs
+    ['timer-custom-min','timer-custom-sec'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('keydown', e => e.stopPropagation());
+    });
+  }
+
+  function setCustom() {
+    const m = parseInt(document.getElementById('timer-custom-min')?.value) || 0;
+    const s = parseInt(document.getElementById('timer-custom-sec')?.value) || 0;
+    const totalSecs = m * 60 + s;
+    if (totalSecs > 0) {
+      setTime(totalSecs);
+      if (running) { clearInterval(interval); running = false; }
+    }
+  }
+
+  function setTime(secs) {
+    remaining = secs;
+    total     = secs;
+    updateDisplay();
+    updateBar();
+  }
+
+  function start() {
+    if (running) return;
+    if (remaining <= 0) return;
+    running = true;
+    interval = setInterval(() => {
+      remaining--;
+      updateDisplay();
+      updateBar();
+      if (remaining <= 0) {
+        clearInterval(interval);
+        running = false;
+        onFinish();
+      }
+    }, 1000);
+  }
+
+  function pause() {
+    if (!running) return;
+    clearInterval(interval);
+    running = false;
+  }
+
+  function reset() {
+    clearInterval(interval);
+    running = false;
+    setTime(total);
+  }
+
+  function onFinish() {
+    // Flash red + play beep
+    const disp = document.getElementById('timer-display');
+    if (disp) {
+      disp.style.color = '#ef4444';
+      disp.textContent = 'TIME!';
+      let flashes = 0;
+      const flash = setInterval(() => {
+        flashes++;
+        disp.style.color = flashes % 2 === 0 ? '#ef4444' : '#fff';
+        if (flashes >= 10) {
+          clearInterval(flash);
+          disp.style.color = '#e8c96b';
+          disp.textContent = '00:00';
+        }
+      }, 400);
+    }
+    // Beep using Web Audio API
+    try {
+      const ctx = new AudioContext();
+      [0, 0.3, 0.6].forEach(delay => {
+        const osc  = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.4, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + delay + 0.25);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.25);
+      });
+    } catch(e) {}
+    App.showToast('⏰ Time is up!');
+  }
+
+  function updateDisplay() {
+    const disp = document.getElementById('timer-display');
+    if (!disp) return;
+    const m = Math.floor(remaining / 60).toString().padStart(2,'0');
+    const s = (remaining % 60).toString().padStart(2,'0');
+    disp.textContent = `${m}:${s}`;
+    // Turn red when under 10 seconds
+    disp.style.color = remaining <= 10 && remaining > 0 ? '#ef4444' : '#e8c96b';
+    disp.style.textShadow = remaining <= 10 && remaining > 0
+      ? '0 0 20px rgba(239,68,68,0.6)' : '0 0 20px rgba(201,168,76,0.4)';
+  }
+
+  function updateBar() {
+    const bar = document.getElementById('timer-bar');
+    if (!bar || total === 0) return;
+    const pct = (remaining / total) * 100;
+    bar.style.width = pct + '%';
+    bar.style.background = remaining <= 10
+      ? 'linear-gradient(90deg,#ef4444,#f87171)'
+      : remaining <= total * 0.25
+      ? 'linear-gradient(90deg,#f97316,#fb923c)'
+      : 'linear-gradient(90deg,#c9a84c,#e8c96b)';
+  }
+
+  // Make widget draggable
+  function makeDraggable(el) {
+    let ox = 0, oy = 0, mx = 0, my = 0;
+    el.addEventListener('mousedown', e => {
+      if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+      ox = el.offsetLeft - e.clientX;
+      oy = el.offsetTop  - e.clientY;
+      document.addEventListener('mousemove', drag);
+      document.addEventListener('mouseup', stopDrag);
+    });
+    function drag(e) {
+      el.style.left = (e.clientX + ox) + 'px';
+      el.style.top  = (e.clientY + oy) + 'px';
+      el.style.right = 'auto';
+    }
+    function stopDrag() {
+      document.removeEventListener('mousemove', drag);
+      document.removeEventListener('mouseup', stopDrag);
+    }
+  }
+
+  return { show, hide, toggle };
+})();
+window.Timer = Timer;
 
 </script>
 </body>
