@@ -12,14 +12,14 @@ const Shapes = (() => {
   function dimLabel(ctx, x, y, text, color) {
     ctx.save();
     ctx.setLineDash([]);
-    ctx.font = '600 11px JetBrains Mono, monospace';
+    ctx.font = '600 14px "JetBrains Mono", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const tw = ctx.measureText(text).width;
-    const pw = tw + 10, ph = 16;
-    ctx.fillStyle = 'rgba(8,15,31,0.82)';
+    const pw = tw + 14, ph = 22;
+    ctx.fillStyle = 'rgba(8,15,31,0.88)';
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x - pw/2, y - ph/2, pw, ph, 3);
+    if (ctx.roundRect) ctx.roundRect(x - pw/2, y - ph/2, pw, ph, 5);
     else ctx.rect(x - pw/2, y - ph/2, pw, ph);
     ctx.fill();
     ctx.fillStyle = color;
@@ -40,12 +40,12 @@ const Shapes = (() => {
     ctx.restore();
   }
 
-  // ── Selection handles ──
+  // ── Selection handles — enlarged for 65" SmartBoard touch grabbing ──
   function selectionHandles(ctx, bx, by, bw, bh) {
     ctx.save();
     ctx.setLineDash([5, 4]);
     ctx.strokeStyle = '#c9a84c';
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1.6;
     ctx.strokeRect(bx - 6, by - 6, bw + 12, bh + 12);
     ctx.setLineDash([]);
     const pts = [
@@ -56,10 +56,10 @@ const Shapes = (() => {
     pts.forEach(([hx, hy]) => {
       ctx.fillStyle = '#c9a84c';
       ctx.beginPath();
-      ctx.arc(hx, hy, 5, 0, PI*2);
+      ctx.arc(hx, hy, 7, 0, PI*2);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
       ctx.stroke();
     });
     ctx.restore();
@@ -67,6 +67,17 @@ const Shapes = (() => {
 
   // ── Main draw dispatcher ──
   function draw(ctx, s) {
+    // ── Delegate Table to TableTool ──
+    if (s.type === 'table' && typeof TableTool !== 'undefined') {
+      TableTool.draw(ctx, s);
+      return;
+    }
+    // ── Delegate Sticky Note to StickyNotesTool ──
+    if (s.type === 'stickyNote' && typeof StickyNotesTool !== 'undefined') {
+      StickyNotesTool.draw(ctx, s);
+      return;
+    }
+
     // ── Delegate science diagram types to ScienceShapes ──
     if (typeof ScienceShapes !== 'undefined' && ScienceShapes.isScienceShape(s.type)) {
       ScienceShapes.draw(ctx, s);
@@ -963,6 +974,8 @@ const Shapes = (() => {
   // ── Bounding box for hit-testing (math shapes) ──
   function _mathGetBounds(s) {
     switch (s.type) {
+      case 'table':
+      case 'stickyNote':     return { x: s.x, y: s.y, w: s.w, h: s.h };
       case 'image':          return { x: s.x, y: s.y, w: s.w, h: s.h };
       case 'equilateral':    return { x: s.x, y: s.y, w: s.side, h: s.side * Math.sqrt(3)/2 };
       case 'rightTriangle':  return { x: s.x, y: s.y, w: s.base, h: s.height };
@@ -1284,7 +1297,7 @@ const Shapes = (() => {
     ];
   }
 
-  function getHandleAt(s, px, py, radius = 12) {
+  function getHandleAt(s, px, py, radius = 20) {
     if (!s) return null;
     const handles = getHandles(s);
     for (const h of handles) {

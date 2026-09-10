@@ -7,10 +7,10 @@
 const Canvas = (() => {
 
   const BOARD_COLORS = [
-    { id:'green', bg:'#0a1f0a', line:'rgba(255,255,255,0.09)', major:'rgba(255,255,255,0.16)' },
-    { id:'black', bg:'#000000', line:'rgba(255,255,255,0.08)', major:'rgba(255,255,255,0.15)' },
-    { id:'navy',  bg:'#080f1f', line:'rgba(148,163,184,0.10)', major:'rgba(148,163,184,0.18)' },
-    { id:'white', bg:'#ffffff', line:'rgba(15,23,42,0.08)',    major:'rgba(15,23,42,0.14)'    },
+    { id:'green', bg:'#0e2419', line:'rgba(255,255,255,0.075)', major:'rgba(255,255,255,0.15)' },
+    { id:'black', bg:'#0b0d13', line:'rgba(255,255,255,0.07)',  major:'rgba(255,255,255,0.14)' },
+    { id:'navy',  bg:'#0a1224', line:'rgba(148,163,184,0.08)', major:'rgba(148,163,184,0.16)' },
+    { id:'white', bg:'#ffffff', line:'rgba(15,23,42,0.07)',    major:'rgba(15,23,42,0.13)'    },
   ];
   let currentBoardColor = BOARD_COLORS[0];
   let currentBgImage = null; // dataURL or null
@@ -27,6 +27,9 @@ const Canvas = (() => {
   let resizing  = null;
   let dragOff   = { x:0, y:0 };
   let lineStart = null;
+  let draggingTableDivider = null; // { table, type, index, startX, startY, origWidths, origHeights }
+  let rotatingStickyNote = null;   // { note, cx, cy, startAngle, origRot }
+  let cellClickCandidate = null;   // { table, r, c, startX, startY }
 
   // Touch tap detection for double-tap (edit text)
   let lastTap = 0;
@@ -108,7 +111,7 @@ const Canvas = (() => {
       }
     });
 
-    drawGrid();
+    setBoardColor(currentBoardColor.id, currentBoardColor.bg, currentBoardColor.line, currentBoardColor.major);
     renderShapes();
     applyZoomTransform();
   }
@@ -118,9 +121,18 @@ const Canvas = (() => {
   // ─────────────────────────────────────────────
   function resize() {
     const zone = document.getElementById('canvas-zone');
+    if (!zone) return;
     W = zone.offsetWidth;
     H = zone.offsetHeight;
-    ['grid-canvas','shape-canvas','draw-canvas','ui-canvas'].forEach(id => {
+
+    // Grid canvas always covers the full zone screen
+    const gc = document.getElementById('grid-canvas');
+    if (gc) {
+      gc.width = W;
+      gc.height = H;
+    }
+
+    ['shape-canvas','draw-canvas','ui-canvas'].forEach(id => {
       const c = document.getElementById(id);
       if (c) { c.width = W; c.height = H; }
     });
@@ -146,33 +158,27 @@ const Canvas = (() => {
           g = parseInt(hex.substring(2, 4), 16) || 0;
           b = parseInt(hex.substring(4, 6), 16) || 0;
         }
-      } else {
+      } else if (bgHexOrRgb.startsWith('rgb')) {
         const m = bgHexOrRgb.match(/\d+/g);
         if (m && m.length >= 3) {
-          r = parseInt(m[0]) || 0;
-          g = parseInt(m[1]) || 0;
-          b = parseInt(m[2]) || 0;
+          r = parseInt(m[0], 10);
+          g = parseInt(m[1], 10);
+          b = parseInt(m[2], 10);
         }
       }
     }
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-    if (lum > 145) {
-      return {
-        line: 'rgba(15, 23, 42, 0.08)',
-        major: 'rgba(15, 23, 42, 0.14)'
-      };
+    if (lum > 150) {
+      return { line: 'rgba(15, 23, 42, 0.08)', major: 'rgba(15, 23, 42, 0.15)' };
     } else {
-      return {
-        line: 'rgba(255, 255, 255, 0.08)',
-        major: 'rgba(255, 255, 255, 0.15)'
-      };
+      return { line: 'rgba(255, 255, 255, 0.09)', major: 'rgba(255, 255, 255, 0.18)' };
     }
   }
 
   function setBoardColor(id, bg, line, major) {
     if (!bg) {
       const match = BOARD_COLORS.find(b => b.id === id);
-      bg = match ? match.bg : '#0a1f0a';
+      bg = match ? match.bg : '#0e2419';
       line = match ? match.line : null;
       major = match ? match.major : null;
     }
@@ -184,26 +190,43 @@ const Canvas = (() => {
     currentBoardColor = { id, bg, line, major: major || line };
     const zone = document.getElementById('canvas-zone');
     if (zone) zone.style.background = currentBoardColor.bg;
+
+    // Harmonize UI elements (page tabs & statusbar footer) with board color
+    document.documentElement.style.setProperty('--board-bg', currentBoardColor.bg);
+    document.documentElement.setAttribute('data-board-theme', id);
+
     drawGrid();
   }
 
   // ─────────────────────────────────────────────
-  // GRID & BACKGROUND — GRAPH PAPER / GRID OF LINES
+  // INFINITE FULL-SCREEN GRID — NEVER CLIPPED BY ZOOM OR PAN
   // ─────────────────────────────────────────────
   function drawGrid() {
-    gridCtx.clearRect(0, 0, W, H);
+    const zone = document.getElementById('canvas-zone');
+    const gc   = document.getElementById('grid-canvas');
+    if (!zone || !gc || !gridCtx) return;
+
+    const screenW = zone.offsetWidth || W;
+    const screenH = zone.offsetHeight || H;
+
+    if (gc.width !== screenW || gc.height !== screenH) {
+      gc.width  = screenW;
+      gc.height = screenH;
+    }
+
+    gridCtx.clearRect(0, 0, screenW, screenH);
     gridCtx.fillStyle = currentBoardColor.bg;
-    gridCtx.fillRect(0, 0, W, H);
+    gridCtx.fillRect(0, 0, screenW, screenH);
 
     if (bgImageObj && bgImageObj.complete && bgImageObj.naturalWidth > 0) {
       gridCtx.save();
       const imgW = bgImageObj.naturalWidth;
       const imgH = bgImageObj.naturalHeight;
-      const scale = Math.min(W / imgW, H / imgH);
+      const scale = Math.min(screenW / imgW, screenH / imgH);
       const dw = imgW * scale;
       const dh = imgH * scale;
-      const dx = (W - dw) / 2;
-      const dy = (H - dh) / 2;
+      const dx = (screenW - dw) / 2;
+      const dy = (screenH - dh) / 2;
       gridCtx.drawImage(bgImageObj, dx, dy, dw, dh);
       gridCtx.restore();
     } else {
@@ -211,49 +234,57 @@ const Canvas = (() => {
         ? { line: currentBoardColor.line, major: currentBoardColor.major }
         : getGridColors(currentBoardColor.bg);
 
-      const step = 32; // Graph paper square step
-      const majorStep = step * 5; // Major accent line every 5 squares (160px)
+      // SmartBoard Graph Paper Grid: Always full screen, completely covering everything
+      // Base step in screen pixels tracks zoom & pan seamlessly
+      let effectiveStep = 32 * zoomLevel;
+      while (effectiveStep < 20) {
+        effectiveStep *= 2;
+      }
+      while (effectiveStep > 64) {
+        effectiveStep /= 2;
+      }
+
+      const majorStep = effectiveStep * 5;
+
+      // Pan-aligned start coordinates so grid tracks canvas movement smoothly
+      const startX = ((panX % effectiveStep) + effectiveStep) % effectiveStep;
+      const startY = ((panY % effectiveStep) + effectiveStep) % effectiveStep;
 
       gridCtx.save();
       gridCtx.lineWidth = 1;
 
-      // 1. Regular grid lines
+      // 1. Regular grid lines across 100% of the screen
       gridCtx.beginPath();
       gridCtx.strokeStyle = colors.line;
 
-      // Vertical lines
-      for (let x = step; x < W; x += step) {
-        if (x % majorStep !== 0) {
-          const px = Math.floor(x) + 0.5;
-          gridCtx.moveTo(px, 0);
-          gridCtx.lineTo(px, H);
-        }
+      for (let x = startX; x <= screenW; x += effectiveStep) {
+        const px = Math.floor(x) + 0.5;
+        gridCtx.moveTo(px, 0);
+        gridCtx.lineTo(px, screenH);
       }
-      // Horizontal lines
-      for (let y = step; y < H; y += step) {
-        if (y % majorStep !== 0) {
-          const py = Math.floor(y) + 0.5;
-          gridCtx.moveTo(0, py);
-          gridCtx.lineTo(W, py);
-        }
+      for (let y = startY; y <= screenH; y += effectiveStep) {
+        const py = Math.floor(y) + 0.5;
+        gridCtx.moveTo(0, py);
+        gridCtx.lineTo(screenW, py);
       }
       gridCtx.stroke();
 
-      // 2. Major accent grid lines (slightly more prominent)
+      // 2. Major accent grid lines across 100% of the screen
+      const majorStartX = ((panX % majorStep) + majorStep) % majorStep;
+      const majorStartY = ((panY % majorStep) + majorStep) % majorStep;
+
       gridCtx.beginPath();
       gridCtx.strokeStyle = colors.major;
 
-      // Major vertical lines
-      for (let x = majorStep; x < W; x += majorStep) {
+      for (let x = majorStartX; x <= screenW; x += majorStep) {
         const px = Math.floor(x) + 0.5;
         gridCtx.moveTo(px, 0);
-        gridCtx.lineTo(px, H);
+        gridCtx.lineTo(px, screenH);
       }
-      // Major horizontal lines
-      for (let y = majorStep; y < H; y += majorStep) {
+      for (let y = majorStartY; y <= screenH; y += majorStep) {
         const py = Math.floor(y) + 0.5;
         gridCtx.moveTo(0, py);
-        gridCtx.lineTo(W, py);
+        gridCtx.lineTo(screenW, py);
       }
       gridCtx.stroke();
 
@@ -758,6 +789,31 @@ const Canvas = (() => {
     UI.updateStatus();
   }
 
+  function addImageShape(dataUrl, x, y, w, h, name) {
+    saveHistory();
+    const sz = getCanvasSize ? getCanvasSize() : { W: 1200, H: 800 };
+    const imgW = w || 560;
+    const imgH = h || 340;
+    const posX = (x !== undefined && x !== null) ? x : Math.round((sz.W - imgW) / 2);
+    const posY = (y !== undefined && y !== null) ? y : Math.round((sz.H - imgH) / 2);
+    const s = {
+      id: Date.now(),
+      type: 'image',
+      src: dataUrl,
+      fileName: name || 'Simulation Diagram',
+      x: posX,
+      y: posY,
+      w: imgW,
+      h: imgH,
+      selected: true
+    };
+    shapes.push(s);
+    selectShape(s);
+    renderShapes();
+    UI.updateStatus();
+    if (typeof App !== 'undefined' && App.setTool) App.setTool('select');
+  }
+
   function addTextShape(x, y, text, color, fontSize) {
     saveHistory();
     const s = { id:Date.now(), type:'text-block', x, y, text, color, fontSize:fontSize||18, selected:false };
@@ -790,14 +846,42 @@ const Canvas = (() => {
 
   function selectShape(s) {
     shapes.forEach(sh => sh.selected = false);
-    if (s) { s.selected = true; selected = s; }
-    else selected = null;
+    if (s) {
+      s.selected = true;
+      selected = s;
+      if (s.type === 'table' && typeof TableTool !== 'undefined') {
+        TableTool.showTableContextToolbar(s);
+        if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.hideNoteContextToolbar();
+      } else if (s.type === 'stickyNote' && typeof StickyNotesTool !== 'undefined') {
+        StickyNotesTool.showNoteContextToolbar(s);
+        if (typeof TableTool !== 'undefined') TableTool.hideTableContextToolbar();
+      } else {
+        if (typeof TableTool !== 'undefined') TableTool.hideTableContextToolbar();
+        if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.hideNoteContextToolbar();
+      }
+    } else {
+      selected = null;
+      if (typeof TableTool !== 'undefined') {
+        TableTool.hideTableContextToolbar();
+        TableTool.closeInlineEditor();
+      }
+      if (typeof StickyNotesTool !== 'undefined') {
+        StickyNotesTool.hideNoteContextToolbar();
+        StickyNotesTool.closeInlineEditor();
+      }
+    }
     renderShapes();
     UI.showPropPanel(selected);
     updateFloatingToolbar();
   }
 
-  function deselectAll() { selectShape(null); UI.hidePropPanel(); updateFloatingToolbar(); }
+  function deselectAll() {
+    selectShape(null);
+    UI.hidePropPanel();
+    updateFloatingToolbar();
+    if (typeof TableTool !== 'undefined') TableTool.hideTableContextToolbar();
+    if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.hideNoteContextToolbar();
+  }
 
   function updateProp(key, value) {
     if (!selected) return;
@@ -817,10 +901,10 @@ const Canvas = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // HIT TEST — larger touch target (20px padding)
+  // HIT TEST — SmartBoard touch target (24px padding)
   // ─────────────────────────────────────────────
   function hitTest(x, y, padding) {
-    const p = padding !== undefined ? padding : 14;
+    const p = padding !== undefined ? padding : 24;
     for (let i = shapes.length-1; i >= 0; i--) {
       const b = Shapes.getBounds(shapes[i]);
       if (x >= b.x-p && x <= b.x+b.w+p && y >= b.y-p && y <= b.y+b.h+p)
@@ -860,6 +944,7 @@ const Canvas = (() => {
     if (lbl) {
       lbl.textContent = `${Math.round(zoomLevel * 100)}%`;
     }
+    drawGrid();
   }
 
   function setZoom(newZoom, originScreenX, originScreenY) {
@@ -939,7 +1024,19 @@ const Canvas = (() => {
   function onDblClick(e) {
     const pos = getPosFromEvent(e);
     const hit = hitTest(pos.x, pos.y, 16);
-    if (hit && hit.type === 'text-block') { selectShape(hit); Drawing.editText(hit); }
+    if (hit && hit.type === 'text-block') {
+      selectShape(hit);
+      Drawing.editText(hit);
+    } else if (hit && hit.type === 'table' && typeof TableTool !== 'undefined') {
+      selectShape(hit);
+      const cellHit = TableTool.hitTest(hit, pos.x, pos.y);
+      if (cellHit && cellHit.type === 'cell') {
+        TableTool.editCell(hit, cellHit.r, cellHit.c);
+      }
+    } else if (hit && hit.type === 'stickyNote' && typeof StickyNotesTool !== 'undefined') {
+      selectShape(hit);
+      StickyNotesTool.editNote(hit);
+    }
   }
   function onCursorPos(e) {
     const pos = getPosFromEvent(e);
@@ -948,7 +1045,65 @@ const Canvas = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // TOUCH HANDLERS
+  // TWO-FINGER MULTI-TOUCH PAN & PINCH-ZOOM
+  // ─────────────────────────────────────────────
+  let twoFingerActive = false;
+  let twoFingerStartDist = 0;
+  let twoFingerStartZoom = 1.0;
+  let twoFingerStartMid = { x: 0, y: 0 };
+  let twoFingerStartPan = { x: 0, y: 0 };
+
+  function handleTwoFingerTouchStart(e) {
+    if (e.touches.length !== 2) return;
+    twoFingerActive = true;
+    const t1 = e.touches[0], t2 = e.touches[1];
+    twoFingerStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+    twoFingerStartZoom = zoomLevel;
+    twoFingerStartMid = {
+      x: (t1.clientX + t2.clientX) / 2,
+      y: (t1.clientY + t2.clientY) / 2
+    };
+    twoFingerStartPan = { x: panX, y: panY };
+  }
+
+  function handleTwoFingerTouchMove(e) {
+    if (!twoFingerActive || e.touches.length !== 2) return;
+    const t1 = e.touches[0], t2 = e.touches[1];
+    const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+    const currentMid = {
+      x: (t1.clientX + t2.clientX) / 2,
+      y: (t1.clientY + t2.clientY) / 2
+    };
+
+    // Calculate pinch scale
+    const scale = currentDist / twoFingerStartDist;
+    const targetZoom = Math.max(0.25, Math.min(3.0, twoFingerStartZoom * scale));
+
+    // Calculate pan delta
+    const deltaX = currentMid.x - twoFingerStartMid.x;
+    const deltaY = currentMid.y - twoFingerStartMid.y;
+
+    // Apply zoom anchored to the two-finger midpoint
+    const zone = document.getElementById('canvas-zone');
+    const rect = zone ? zone.getBoundingClientRect() : { left: 0, top: 0 };
+    const ox = twoFingerStartMid.x - rect.left;
+    const oy = twoFingerStartMid.y - rect.top;
+
+    panX = ox - (ox - twoFingerStartPan.x) * (targetZoom / twoFingerStartZoom) + deltaX;
+    panY = oy - (oy - twoFingerStartPan.y) * (targetZoom / twoFingerStartZoom) + deltaY;
+    zoomLevel = targetZoom;
+
+    applyZoomTransform();
+  }
+
+  function handleTwoFingerTouchEnd(e) {
+    if (twoFingerActive && e.touches.length < 2) {
+      twoFingerActive = false;
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // TOUCH HANDLERS — Zero-lag touch & multi-touch
   // ─────────────────────────────────────────────
   function onTouchStart(e) {
     // 3+ fingers gesture eraser check
@@ -963,24 +1118,45 @@ const Canvas = (() => {
       return;
     }
 
+    // 2 fingers smooth pan & pinch-zoom
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      if (typeof Drawing !== 'undefined') Drawing.touchEnd();
+      handleTwoFingerTouchStart(e);
+      return;
+    }
+
     const tool = App.currentTool;
 
     // Single finger
     if (e.touches.length === 1) {
+      e.preventDefault(); // Eliminate browser 300ms tap delay & scrolling conflict
       const t   = e.touches[0];
       const pos = getPosFromTouch(t);
 
-      // Detect double-tap (for editing text)
+      // Detect double-tap (for editing text) — 50px threshold for 65" touch
       const now = Date.now();
-      if (lastTapPos && now - lastTap < 320
-          && Math.abs(pos.x - lastTapPos.x) < 30
-          && Math.abs(pos.y - lastTapPos.y) < 30) {
+      if (lastTapPos && now - lastTap < 350
+          && Math.abs(pos.x - lastTapPos.x) < 50
+          && Math.abs(pos.y - lastTapPos.y) < 50) {
         // Double tap
-        const hit = hitTest(pos.x, pos.y, 20);
+        const hit = hitTest(pos.x, pos.y, 28);
         if (hit && hit.type === 'text-block') {
-          e.preventDefault();
           selectShape(hit);
           Drawing.editText(hit);
+          lastTap = 0; lastTapPos = null;
+          return;
+        } else if (hit && hit.type === 'table' && typeof TableTool !== 'undefined') {
+          selectShape(hit);
+          const cellHit = TableTool.hitTest(hit, pos.x, pos.y);
+          if (cellHit && cellHit.type === 'cell') {
+            TableTool.editCell(hit, cellHit.r, cellHit.c);
+          }
+          lastTap = 0; lastTapPos = null;
+          return;
+        } else if (hit && hit.type === 'stickyNote' && typeof StickyNotesTool !== 'undefined') {
+          selectShape(hit);
+          StickyNotesTool.editNote(hit);
           lastTap = 0; lastTapPos = null;
           return;
         }
@@ -990,13 +1166,10 @@ const Canvas = (() => {
 
       // Pen / highlighter / eraser — pass to Drawing
       if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
-        // Drawing handles its own touch on draw-canvas — but draw-canvas
-        // has pointer-events:none when not in draw mode, so we route here
         Drawing.touchStart(t);
         return;
       }
 
-      e.preventDefault();
       handleDown(pos);
     }
   }
@@ -1008,14 +1181,21 @@ const Canvas = (() => {
       return;
     }
 
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      handleTwoFingerTouchMove(e);
+      return;
+    }
+
     const tool = App.currentTool;
     if (e.touches.length === 1) {
+      e.preventDefault(); // Stop touch scroll emulation
       const t   = e.touches[0];
       const pos = getPosFromTouch(t);
       if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
-        Drawing.touchMove(t); return;
+        Drawing.touchMove(t);
+        return;
       }
-      e.preventDefault();
       handleMove(pos);
     }
   }
@@ -1027,9 +1207,14 @@ const Canvas = (() => {
       return;
     }
 
+    if (twoFingerActive) {
+      handleTwoFingerTouchEnd(e);
+    }
+
     const tool = App.currentTool;
     if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
-      Drawing.touchEnd(); return;
+      Drawing.touchEnd();
+      return;
     }
     if (e.changedTouches.length === 1) {
       handleUp(getPosFromTouch(e.changedTouches[0]));
@@ -1040,6 +1225,7 @@ const Canvas = (() => {
     if (typeof GestureEraser !== 'undefined' && GestureEraser.isActive()) {
       GestureEraser.handleTouchCancel(e);
     }
+    twoFingerActive = false;
     if (typeof SmartDrawing !== 'undefined') {
       SmartDrawing.clearStrokePreview();
     }
@@ -1047,6 +1233,9 @@ const Canvas = (() => {
     resizing  = null;
     dragging  = null;
     lineStart = null;
+    draggingTableDivider = null;
+    rotatingStickyNote = null;
+    cellClickCandidate = null;
   }
 
   // ─────────────────────────────────────────────
@@ -1065,9 +1254,89 @@ const Canvas = (() => {
       return;
     }
 
-    // 1. Check if clicking on resize handles of the selected shape
+    // Direct tool placement for Table and Sticky Notes
+    if (tool === 'table') {
+      if (typeof TableTool !== 'undefined') {
+        TableTool.openCreateModal(pos.x, pos.y);
+        App.setTool('select');
+      }
+      return;
+    }
+    if (tool === 'sticky' || tool === 'stickyNote') {
+      if (typeof StickyNotesTool !== 'undefined') {
+        const note = StickyNotesTool.createStickyNote(pos.x - 110, pos.y - 110);
+        addShapeObject(note);
+        selectShape(note);
+        App.setTool('select');
+        StickyNotesTool.editNote(note);
+      }
+      return;
+    }
+
+    // Check sticky note rotation stem knob when sticky note is selected
+    if (selected && selected.type === 'stickyNote' && typeof StickyNotesTool !== 'undefined') {
+      const sHit = StickyNotesTool.hitTest(selected, pos.x, pos.y);
+      if (sHit && sHit.type === 'rotate') {
+        const cx = selected.x + selected.w / 2;
+        const cy = selected.y + selected.h / 2;
+        const startAng = Math.atan2(pos.y - cy, pos.x - cx) * 180 / Math.PI;
+        rotatingStickyNote = {
+          note: selected,
+          cx, cy,
+          startAngle: startAng,
+          origRot: selected.rotation || 0
+        };
+        return;
+      }
+    }
+
+    // Check table divider dragging or move handle when table is selected
+    if (selected && selected.type === 'table' && typeof TableTool !== 'undefined') {
+      const tHit = TableTool.hitTest(selected, pos.x, pos.y);
+      if (tHit) {
+        if (tHit.type === 'col-divider') {
+          draggingTableDivider = {
+            table: selected,
+            type: 'col',
+            colIndex: tHit.colIndex,
+            startX: pos.x,
+            origWidths: [...selected.colWidths]
+          };
+          return;
+        } else if (tHit.type === 'row-divider') {
+          draggingTableDivider = {
+            table: selected,
+            type: 'row',
+            rowIndex: tHit.rowIndex,
+            startY: pos.y,
+            origHeights: [...selected.rowHeights]
+          };
+          return;
+        } else if (tHit.type === 'move-handle') {
+          dragging = selected;
+          dragOff = { x: pos.x - selected.x, y: pos.y - selected.y };
+          return;
+        } else if (tHit.type === 'cell') {
+          selected.selectedCells = [{ r: tHit.r, c: tHit.c }];
+          TableTool.showTableContextToolbar(selected);
+          renderShapes();
+
+          if (tool === 'text') {
+            TableTool.editCell(selected, tHit.r, tHit.c);
+            return;
+          }
+
+          cellClickCandidate = { table: selected, r: tHit.r, c: tHit.c, startX: pos.x, startY: pos.y };
+          dragging = selected;
+          dragOff = { x: pos.x - selected.x, y: pos.y - selected.y };
+          return;
+        }
+      }
+    }
+
+    // 1. Check if clicking on resize handles of the selected shape (22px touch target)
     if (selected) {
-      const handle = Shapes.getHandleAt(selected, pos.x, pos.y, 14);
+      const handle = Shapes.getHandleAt(selected, pos.x, pos.y, 22);
       if (handle) {
         resizing = {
           shape: selected,
@@ -1102,6 +1371,18 @@ const Canvas = (() => {
         selectShape(hit);
         Drawing.editText(hit);
         return;
+      } else if (hit && hit.type === 'table' && typeof TableTool !== 'undefined') {
+        selectShape(hit);
+        const tHit = TableTool.hitTest(hit, pos.x, pos.y);
+        const r = (tHit && tHit.type === 'cell') ? tHit.r : 0;
+        const c = (tHit && tHit.type === 'cell') ? tHit.c : 0;
+        hit.selectedCells = [{ r, c }];
+        TableTool.editCell(hit, r, c);
+        return;
+      } else if (hit && hit.type === 'stickyNote' && typeof StickyNotesTool !== 'undefined') {
+        selectShape(hit);
+        StickyNotesTool.editNote(hit);
+        return;
       } else if (!hit) {
         deselectAll();
         Drawing.placeText(pos.x, pos.y);
@@ -1114,6 +1395,15 @@ const Canvas = (() => {
         selectShape(hit);
         dragging = hit;
         dragOff  = { x: pos.x - hit.x, y: pos.y - hit.y };
+        if (hit.type === 'table' && typeof TableTool !== 'undefined') {
+          const tHit = TableTool.hitTest(hit, pos.x, pos.y);
+          if (tHit && tHit.type === 'cell') {
+            hit.selectedCells = [{ r: tHit.r, c: tHit.c }];
+            TableTool.showTableContextToolbar(hit);
+            renderShapes();
+            cellClickCandidate = { table: hit, r: tHit.r, c: tHit.c, startX: pos.x, startY: pos.y };
+          }
+        }
       } else {
         deselectAll();
       }
@@ -1122,6 +1412,10 @@ const Canvas = (() => {
 
   function handleMove(pos) {
     const tool = App.currentTool;
+
+    if (cellClickCandidate && Math.hypot(pos.x - cellClickCandidate.startX, pos.y - cellClickCandidate.startY) > 6) {
+      cellClickCandidate = null;
+    }
 
     if (typeof SmartDrawing !== 'undefined' && tool === 'smart-draw') {
       SmartDrawing.onMove(pos);
@@ -1133,13 +1427,91 @@ const Canvas = (() => {
       return;
     }
 
+    // Rotate sticky note
+    if (rotatingStickyNote) {
+      const r = rotatingStickyNote;
+      const curAng = Math.atan2(pos.y - r.cy, pos.x - r.cx) * 180 / Math.PI;
+      let diff = curAng - r.startAngle;
+      let newRot = Math.round((r.origRot + diff) % 360);
+      [0, 90, -90, 180, -180, 270, 360].forEach(snap => {
+        if (Math.abs(newRot - snap) < 4) newRot = (snap === 360 ? 0 : snap);
+      });
+      r.note.rotation = newRot;
+      renderShapes();
+      if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.showNoteContextToolbar(r.note);
+      return;
+    }
+
+    // Drag table column / row divider
+    if (draggingTableDivider) {
+      const d = draggingTableDivider;
+      if (d.type === 'col') {
+        const dx = pos.x - d.startX;
+        const newW = Math.max(55, d.origWidths[d.colIndex] + dx);
+        d.table.colWidths[d.colIndex] = Math.round(newW);
+        d.table.w = d.table.colWidths.reduce((a, b) => a + b, 0);
+      } else if (d.type === 'row') {
+        const dy = pos.y - d.startY;
+        const newH = Math.max(38, d.origHeights[d.rowIndex] + dy);
+        d.table.rowHeights[d.rowIndex] = Math.round(newH);
+        d.table.h = d.table.rowHeights.reduce((a, b) => a + b, 0);
+      }
+      renderShapes();
+      if (typeof TableTool !== 'undefined') TableTool.showTableContextToolbar(d.table);
+      return;
+    }
+
     if (resizing) {
       const dx = pos.x - resizing.startPos.x;
       const dy = pos.y - resizing.startPos.y;
       const s  = resizing.shape;
       const hId = resizing.handle;
 
-      if (s.type === 'text-block') {
+      if (s.type === 'table') {
+        let newW = resizing.origW;
+        let newH = resizing.origH;
+        if (hId.includes('r')) newW = Math.max(s.cols * 55, resizing.origW + dx);
+        if (hId.includes('l')) {
+          newW = Math.max(s.cols * 55, resizing.origW - dx);
+          s.x = resizing.origX + (resizing.origW - newW);
+        }
+        if (hId.includes('b')) newH = Math.max(s.rows * 38, resizing.origH + dy);
+        if (hId.includes('t')) {
+          newH = Math.max(s.rows * 38, resizing.origH - dy);
+          s.y = resizing.origY + (resizing.origH - newH);
+        }
+        const scaleX = newW / Math.max(1, resizing.origW);
+        const scaleY = newH / Math.max(1, resizing.origH);
+        if (resizing.origProps.colWidths) {
+          s.colWidths = resizing.origProps.colWidths.map(w => Math.max(50, Math.round(w * scaleX)));
+          s.w = s.colWidths.reduce((a, b) => a + b, 0);
+        }
+        if (resizing.origProps.rowHeights) {
+          s.rowHeights = resizing.origProps.rowHeights.map(h => Math.max(35, Math.round(h * scaleY)));
+          s.h = s.rowHeights.reduce((a, b) => a + b, 0);
+        }
+        renderShapes();
+        if (typeof TableTool !== 'undefined') TableTool.showTableContextToolbar(s);
+        return;
+      } else if (s.type === 'stickyNote') {
+        let newW = resizing.origW;
+        let newH = resizing.origH;
+        if (hId.includes('r')) newW = Math.max(120, resizing.origW + dx);
+        if (hId.includes('l')) {
+          newW = Math.max(120, resizing.origW - dx);
+          s.x = resizing.origX + dx;
+        }
+        if (hId.includes('b')) newH = Math.max(100, resizing.origH + dy);
+        if (hId.includes('t')) {
+          newH = Math.max(100, resizing.origH - dy);
+          s.y = resizing.origY + dy;
+        }
+        s.w = newW;
+        s.h = newH;
+        renderShapes();
+        if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.showNoteContextToolbar(s);
+        return;
+      } else if (s.type === 'text-block') {
         const origSize = resizing.origFontSize;
         const origW = Math.max(resizing.origW, 40);
         let scale = 1;
@@ -1246,18 +1618,40 @@ const Canvas = (() => {
 
       renderShapes();
       updateFloatingToolbar();
+      if (dragging.type === 'table' && typeof TableTool !== 'undefined') {
+        TableTool.showTableContextToolbar(dragging);
+      } else if (dragging.type === 'stickyNote' && typeof StickyNotesTool !== 'undefined') {
+        StickyNotesTool.showNoteContextToolbar(dragging);
+      }
       return;
     }
 
     // Dynamic hover cursors
     const sc = document.getElementById('shape-canvas');
     if (selected && sc) {
-      const h = Shapes.getHandleAt(selected, pos.x, pos.y, 12);
+      if (selected.type === 'table' && typeof TableTool !== 'undefined') {
+        const tHit = TableTool.hitTest(selected, pos.x, pos.y);
+        if (tHit) {
+          if (tHit.type === 'col-divider') { sc.style.cursor = 'col-resize'; return; }
+          if (tHit.type === 'row-divider') { sc.style.cursor = 'row-resize'; return; }
+          if (tHit.type === 'move-handle') { sc.style.cursor = 'grab'; return; }
+          if (tHit.type === 'handle') { sc.style.cursor = tHit.cursor; return; }
+        }
+      }
+      if (selected.type === 'stickyNote' && typeof StickyNotesTool !== 'undefined') {
+        const sHit = StickyNotesTool.hitTest(selected, pos.x, pos.y);
+        if (sHit) {
+          if (sHit.type === 'rotate') { sc.style.cursor = 'crosshair'; return; }
+          if (sHit.type === 'handle') { sc.style.cursor = sHit.cursor; return; }
+        }
+      }
+
+      const h = Shapes.getHandleAt(selected, pos.x, pos.y, 22);
       if (h) {
         sc.style.cursor = h.cursor;
         return;
       }
-      const hit = hitTest(pos.x, pos.y, 14);
+      const hit = hitTest(pos.x, pos.y, 24);
       if (hit && hit === selected) {
         sc.style.cursor = 'move';
         return;
@@ -1277,6 +1671,14 @@ const Canvas = (() => {
   function handleUp(pos) {
     const tool = App.currentTool;
 
+    if (cellClickCandidate) {
+      const cand = cellClickCandidate;
+      cellClickCandidate = null;
+      dragging = null;
+      TableTool.editCell(cand.table, cand.r, cand.c);
+      return;
+    }
+
     if (typeof SmartDrawing !== 'undefined' && tool === 'smart-draw') {
       SmartDrawing.onUp(pos);
       return;
@@ -1285,6 +1687,18 @@ const Canvas = (() => {
     if (typeof GeometryTool !== 'undefined' && ['measure-line', 'measure-angle', 'compass'].includes(tool)) {
       GeometryTool.handleUp(pos, tool);
       return;
+    }
+
+    if (rotatingStickyNote) {
+      saveHistory();
+      rotatingStickyNote = null;
+      renderShapes();
+    }
+
+    if (draggingTableDivider) {
+      saveHistory();
+      draggingTableDivider = null;
+      renderShapes();
     }
 
     if (resizing) {
@@ -1345,13 +1759,70 @@ const Canvas = (() => {
     if (state.bgImage) setBgImage(state.bgImage);
     renderShapes(); UI.updateStatus();
   }
+  function drawBaseGridOn(targetCtx, width, height) {
+    targetCtx.fillStyle = currentBoardColor.bg;
+    targetCtx.fillRect(0, 0, width, height);
+
+    if (bgImageObj && bgImageObj.complete && bgImageObj.naturalWidth > 0) {
+      const imgW = bgImageObj.naturalWidth;
+      const imgH = bgImageObj.naturalHeight;
+      const scale = Math.min(width / imgW, height / imgH);
+      const dw = imgW * scale;
+      const dh = imgH * scale;
+      const dx = (width - dw) / 2;
+      const dy = (height - dh) / 2;
+      targetCtx.drawImage(bgImageObj, dx, dy, dw, dh);
+    } else {
+      const colors = (currentBoardColor.line && currentBoardColor.major)
+        ? { line: currentBoardColor.line, major: currentBoardColor.major }
+        : getGridColors(currentBoardColor.bg);
+
+      const step = 32;
+      const majorStep = step * 5;
+
+      targetCtx.save();
+      targetCtx.lineWidth = 1;
+
+      targetCtx.beginPath();
+      targetCtx.strokeStyle = colors.line;
+      for (let x = step; x < width; x += step) {
+        if (x % majorStep !== 0) {
+          const px = Math.floor(x) + 0.5;
+          targetCtx.moveTo(px, 0);
+          targetCtx.lineTo(px, height);
+        }
+      }
+      for (let y = step; y < height; y += step) {
+        if (y % majorStep !== 0) {
+          const py = Math.floor(y) + 0.5;
+          targetCtx.moveTo(0, py);
+          targetCtx.lineTo(width, py);
+        }
+      }
+      targetCtx.stroke();
+
+      targetCtx.beginPath();
+      targetCtx.strokeStyle = colors.major;
+      for (let x = majorStep; x < width; x += majorStep) {
+        const px = Math.floor(x) + 0.5;
+        targetCtx.moveTo(px, 0);
+        targetCtx.lineTo(px, height);
+      }
+      for (let y = majorStep; y < height; y += majorStep) {
+        const py = Math.floor(y) + 0.5;
+        targetCtx.moveTo(0, py);
+        targetCtx.lineTo(width, py);
+      }
+      targetCtx.stroke();
+      targetCtx.restore();
+    }
+  }
+
   function snapshot() {
     const out = document.createElement('canvas');
     out.width = W; out.height = H;
     const ctx = out.getContext('2d');
-    ctx.fillStyle = currentBoardColor.bg;
-    ctx.fillRect(0, 0, W, H);
-    try { ctx.drawImage(document.getElementById('grid-canvas'), 0, 0); } catch(e) {}
+    drawBaseGridOn(ctx, W, H);
     try { ctx.drawImage(document.getElementById('shape-canvas'), 0, 0); } catch(e) {}
     try { ctx.drawImage(document.getElementById('draw-canvas'), 0, 0); } catch(e) {}
     try { return out.toDataURL('image/png'); } catch(e) { return ''; }
@@ -1365,9 +1836,7 @@ const Canvas = (() => {
     // White bg fallback for JPEG (no transparency)
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = currentBoardColor.bg;
-    ctx.fillRect(0, 0, W, H);
-    try { ctx.drawImage(document.getElementById('grid-canvas'), 0, 0); } catch(e) {}
+    drawBaseGridOn(ctx, W, H);
     try { ctx.drawImage(document.getElementById('shape-canvas'), 0, 0); } catch(e) {}
     try { ctx.drawImage(document.getElementById('draw-canvas'), 0, 0); } catch(e) {}
     try { return out.toDataURL('image/jpeg', 0.92); } catch(e) { return ''; }
@@ -1380,7 +1849,7 @@ const Canvas = (() => {
   return {
     init, resize, renderShapes, drawGrid, setBoardColor,
     setBgImage, getBgImage,
-    addShape, addShapeObject, addTextShape, setShapes, selectShape, deselectAll, hitTest, deleteShape,
+    addShape, addShapeObject, addImageShape, addTextShape, setShapes, selectShape, deselectAll, hitTest, deleteShape,
     updateProp, clearAll, undo, redo, saveHistory,
     getState, loadState, snapshot, snapshotJpeg,
     getShapeCount, getDrawCtx, getCanvasSize, getPosFromTouch, getPosFromEvent,
@@ -1392,6 +1861,7 @@ const Canvas = (() => {
     toggleTextMoreMenu, duplicateSelectedText, copySelectedText, bringTextToFront,
     showToolbarForTextTool, getSelected: () => selected,
     getBoardColorId: () => currentBoardColor.id, getBoardColor: () => currentBoardColor,
-    zoomIn, zoomOut, resetZoom, setZoom, getZoom
+    zoomIn, zoomOut, resetZoom, setZoom, getZoom,
+    handleTwoFingerTouchStart, handleTwoFingerTouchMove, handleTwoFingerTouchEnd
   };
 })();

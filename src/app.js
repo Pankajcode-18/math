@@ -48,18 +48,31 @@ const App = (() => {
 
     // Tool buttons
     document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
-      btn.addEventListener('click', () => setTool(btn.dataset.tool));
+      btn.addEventListener('click', () => {
+        if (btn.id === 'btn-fp-pen' || btn.id === 'btn-fp-eraser') return;
+        setTool(btn.dataset.tool);
+      });
     });
 
-    $('btn-undo').addEventListener('click', () => Canvas.undo());
-    $('btn-redo').addEventListener('click', () => Canvas.redo());
+    $('btn-undo').addEventListener('click', () => undo());
+    $('btn-redo').addEventListener('click', () => redo());
 
     // Wire tools if available
     if (typeof PptPresenter !== 'undefined') PptPresenter.init();
     if (typeof ImageTool !== 'undefined') ImageTool.init();
 
-    // Keyboard
+    // Keyboard & Fullscreen sync
     document.addEventListener('keydown', onKey);
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) {
+        document.body.classList.remove('board-fullscreen');
+      } else {
+        document.body.classList.add('board-fullscreen');
+      }
+      setTimeout(() => {
+        if (typeof Canvas !== 'undefined' && Canvas.resize) Canvas.resize();
+      }, 80);
+    });
 
     UI.updateStatus();
     updateChapterLabel();
@@ -176,11 +189,9 @@ const App = (() => {
       if (UI.syncSubtoolButtons) UI.syncSubtoolButtons(tool);
       if (tool === 'pen' || tool === 'highlighter') {
         if (UI.closeEraserFlyout) UI.closeEraserFlyout();
-        if (changed && UI.openPenFlyout) UI.openPenFlyout();
         if (typeof Canvas !== 'undefined' && Canvas.updateFloatingToolbar) Canvas.updateFloatingToolbar();
       } else if (tool === 'eraser') {
         if (UI.closePenFlyout) UI.closePenFlyout();
-        if (changed && UI.openEraserFlyout) UI.openEraserFlyout();
         if (typeof Canvas !== 'undefined' && Canvas.updateFloatingToolbar) Canvas.updateFloatingToolbar();
       } else if (tool === 'text') {
         if (UI.closePenFlyout) UI.closePenFlyout();
@@ -197,6 +208,16 @@ const App = (() => {
       }
       UI.syncPenPanel();
       UI.updateStatus();
+    }
+
+    if (window.PhysicsLab && typeof PhysicsLab.syncToolWithBoard === 'function') {
+      PhysicsLab.syncToolWithBoard();
+    }
+    if (window.MathVisualizer && typeof MathVisualizer.syncToolWithBoard === 'function') {
+      MathVisualizer.syncToolWithBoard();
+    }
+    if (window.GraphEngine && typeof GraphEngine.syncToolWithBoard === 'function') {
+      GraphEngine.syncToolWithBoard();
     }
   }
 
@@ -473,36 +494,173 @@ const App = (() => {
   }
 
   function clearBoard() {
-    if (!confirm('Clear this page?')) return;
-    Canvas.clearAll();
-    pages[currentPage].shapes   = [];
-    pages[currentPage].drawData = null;
+    // Custom SmartBoard Touch Confirmation Dialog
+    const existing = document.getElementById('sb-confirm-dialog');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'sb-confirm-dialog';
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 99999;
+      background: rgba(5, 11, 23, 0.75);
+      backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      touch-action: manipulation; user-select: none;
+    `;
+
+    const card = document.createElement('div');
+    card.style.cssText = `
+      background: #0d1b38;
+      border: 2px solid #c9a84c;
+      border-radius: 18px;
+      padding: 28px 32px;
+      max-width: 440px;
+      width: 90%;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.7), 0 0 24px rgba(201,168,76,0.25);
+      text-align: center;
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+    `;
+
+    card.innerHTML = `
+      <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(239,68,68,0.18); border: 2px solid #ef4444; display: flex; align-items: center; justify-content: center; color: #f87171; font-size: 26px;">
+        ⚠️
+      </div>
+      <div style="font-size: 19px; font-weight: 700; color: #ffffff; font-family: 'Segoe UI', system-ui, sans-serif;">
+        Clear Current Board?
+      </div>
+      <div style="font-size: 14px; color: rgba(255,255,255,0.7); line-height: 1.5;">
+        This will erase all pen strokes and shapes on this page. This action cannot be undone.
+      </div>
+      <div style="display: flex; gap: 14px; width: 100%; margin-top: 8px;">
+        <button id="sb-clear-cancel" style="flex: 1; min-height: 48px; border-radius: 12px; background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,255,255,0.2); color: #ffffff; font-size: 15px; font-weight: 600; cursor: pointer;">
+          Cancel
+        </button>
+        <button id="sb-clear-confirm" style="flex: 1.2; min-height: 48px; border-radius: 12px; background: linear-gradient(135deg, #dc2626, #b91c1c); border: 1.5px solid #ef4444; color: #ffffff; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 16px rgba(220,38,38,0.4);">
+          Clear Board
+        </button>
+      </div>
+    `;
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#sb-clear-cancel').onclick = () => overlay.remove();
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    overlay.querySelector('#sb-clear-confirm').onclick = () => {
+      overlay.remove();
+      Canvas.clearAll();
+      pages[currentPage].shapes   = [];
+      pages[currentPage].drawData = null;
+      if (window.PhysicsLab && typeof PhysicsLab.clearAnnotations === 'function') PhysicsLab.clearAnnotations();
+      if (window.MathVisualizer && typeof MathVisualizer.clearAnnotations === 'function') MathVisualizer.clearAnnotations();
+      if (window.GraphEngine && typeof GraphEngine.clearAnnotations === 'function') GraphEngine.clearAnnotations();
+      showToast('Board cleared');
+    };
   }
 
   // ─────────────────────────────────────────────
-  // TOAST (plain) + TOAST WITH ACTION BUTTON
+  // TOAST (plain) + TOAST WITH ACTION BUTTON — SmartBoard enlarged
   // ─────────────────────────────────────────────
   function showToast(msg) {
     const t = document.createElement('div');
-    t.style.cssText = `position:fixed;bottom:48px;left:50%;transform:translateX(-50%);background:rgba(7,16,31,.97);border:1px solid rgba(201,168,76,.5);color:#e8c96b;padding:9px 18px;border-radius:7px;font-size:12.5px;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.5);transition:opacity .3s;font-family:'Inter',sans-serif`;
+    t.style.cssText = `position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:rgba(7,16,31,.97);border:1.5px solid rgba(201,168,76,.6);color:#e8c96b;padding:12px 26px;border-radius:12px;font-size:15px;font-weight:600;z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,.65);transition:opacity .3s;font-family:'Segoe UI',sans-serif;pointer-events:none`;
     t.textContent = msg;
     document.body.appendChild(t);
-    setTimeout(() => { t.style.opacity='0'; setTimeout(() => t.remove(), 300); }, 2400);
+    setTimeout(() => { t.style.opacity='0'; setTimeout(() => t.remove(), 300); }, 2500);
   }
 
   function showToastWithAction(msg, btnLabel, onAction) {
     const t = document.createElement('div');
-    t.style.cssText = `position:fixed;bottom:48px;left:50%;transform:translateX(-50%);background:rgba(7,16,31,.97);border:1px solid rgba(201,168,76,.5);color:#e8c96b;padding:9px 18px;border-radius:7px;font-size:12.5px;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.5);display:flex;align-items:center;gap:12px;font-family:'Inter',sans-serif`;
+    t.style.cssText = `position:fixed;bottom:72px;left:50%;transform:translateX(-50%);background:rgba(7,16,31,.97);border:1.5px solid rgba(201,168,76,.6);color:#e8c96b;padding:12px 24px;border-radius:12px;font-size:15px;font-weight:600;z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,.65);display:flex;align-items:center;gap:14px;font-family:'Segoe UI',sans-serif`;
     const span = document.createElement('span');
     span.textContent = msg;
     const btn = document.createElement('button');
     btn.textContent = btnLabel;
-    btn.style.cssText = `background:rgba(201,168,76,.2);border:1px solid rgba(201,168,76,.6);color:#e8c96b;padding:3px 10px;border-radius:5px;cursor:pointer;font-size:11.5px;font-family:'Inter',sans-serif`;
+    btn.style.cssText = `background:rgba(201,168,76,.25);border:1px solid rgba(201,168,76,.7);color:#e8c96b;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13.5px;font-weight:600;font-family:'Segoe UI',sans-serif;min-height:36px;`;
     btn.onclick = () => { onAction(); t.remove(); };
     t.appendChild(span);
     t.appendChild(btn);
     document.body.appendChild(t);
-    setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .3s'; setTimeout(() => t.remove(), 300); }, 4000);
+    setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .3s'; setTimeout(() => t.remove(), 300); }, 4500);
+  }
+
+  // ─────────────────────────────────────────────
+  // SIMULATION & IMMERSIVE STATE
+  // ─────────────────────────────────────────────
+  function isSimulationActive() {
+    if (window.PhysicsLab && typeof PhysicsLab.isVisible === 'function' && PhysicsLab.isVisible()) return 'physics';
+    if (window.MathVisualizer && typeof MathVisualizer.isVisible === 'function' && MathVisualizer.isVisible()) return 'math';
+    if (window.GraphEngine && typeof GraphEngine.isVisible === 'function' && GraphEngine.isVisible()) return 'graph';
+    return false;
+  }
+
+  function undo() {
+    const sim = isSimulationActive();
+    if (sim === 'physics' && window.PhysicsLab && typeof PhysicsLab.undo === 'function') {
+      PhysicsLab.undo();
+      return;
+    }
+    if (sim === 'math' && window.MathVisualizer && typeof MathVisualizer.undo === 'function') {
+      MathVisualizer.undo();
+      return;
+    }
+    if (sim === 'graph' && window.GraphEngine && typeof GraphEngine.undo === 'function') {
+      GraphEngine.undo();
+      return;
+    }
+    if (typeof Canvas !== 'undefined' && Canvas.undo) {
+      Canvas.undo();
+    }
+  }
+
+  function redo() {
+    const sim = isSimulationActive();
+    if (sim === 'physics' && window.PhysicsLab && typeof PhysicsLab.redo === 'function') {
+      PhysicsLab.redo();
+      return;
+    }
+    if (sim === 'math' && window.MathVisualizer && typeof MathVisualizer.redo === 'function') {
+      MathVisualizer.redo();
+      return;
+    }
+    if (sim === 'graph' && window.GraphEngine && typeof GraphEngine.redo === 'function') {
+      GraphEngine.redo();
+      return;
+    }
+    if (typeof Canvas !== 'undefined' && Canvas.redo) {
+      Canvas.redo();
+    }
+  }
+
+  function toggleFullscreen() {
+    const isNowFullscreen = document.body.classList.toggle('board-fullscreen');
+    if (isNowFullscreen) {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    } else {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+    setTimeout(() => {
+      if (typeof Canvas !== 'undefined' && Canvas.resize) {
+        Canvas.resize();
+      }
+    }, 80);
+  }
+
+  function setSimulationActive(active) {
+    if (active) {
+      document.body.classList.add('sim-active');
+    } else {
+      document.body.classList.remove('sim-active');
+    }
+    setTimeout(() => {
+      if (typeof Canvas !== 'undefined' && Canvas.resize) {
+        Canvas.resize();
+      }
+    }, 60);
   }
 
   // ─────────────────────────────────────────────
@@ -512,8 +670,8 @@ const App = (() => {
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (e.ctrlKey || e.metaKey) {
-      if (e.key === 'z') { e.preventDefault(); Canvas.undo(); }
-      if (e.key === 'y') { e.preventDefault(); Canvas.redo(); }
+      if (e.key === 'z') { e.preventDefault(); undo(); }
+      if (e.key === 'y') { e.preventDefault(); redo(); }
       if (e.key === 's') { e.preventDefault(); saveBoard(); }
       if (e.key === '[' || e.key === '-') { e.preventDefault(); Canvas.adjustFontSize(-2); }
       if (e.key === ']' || e.key === '=' || e.key === '+') { e.preventDefault(); Canvas.adjustFontSize(2); }
@@ -528,7 +686,14 @@ const App = (() => {
     const map = { v:'select', p:'pen', h:'highlighter', t:'text', l:'line', d:'dashed', a:'arrow', e:'eraser', s:'smart-draw' };
     if (map[e.key]) setTool(map[e.key]);
     if (e.key === 'i' || e.key === 'I') { if (typeof ImageTool !== 'undefined') ImageTool.openPicker(); }
-    if (e.key === 'Escape') { setTool('select'); Canvas.deselectAll(); }
+    if (e.key === 'Escape') {
+      if (typeof UI !== 'undefined' && UI.isChapterPanelOpen && UI.isChapterPanelOpen()) {
+        UI.closeChapterPanel();
+        return;
+      }
+      setTool('select');
+      Canvas.deselectAll();
+    }
     if (e.key === 'Delete' || e.key === 'Backspace') Canvas.deleteShape();
   }
 
@@ -568,6 +733,11 @@ const App = (() => {
   // ─────────────────────────────────────────────
   return {
     init,
+    undo,
+    redo,
+    toggleFullscreen,
+    setSimulationActive,
+    isSimulationActive,
     setTool, setColor,
     selectChapter, switchSubject,
     toggleSidebar, toggleRPanel,

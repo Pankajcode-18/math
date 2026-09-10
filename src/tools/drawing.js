@@ -36,6 +36,43 @@ const Drawing = (() => {
     }
     isDrawing = true;
     points    = [{ x, y }];
+
+    // Immediately render dot for single-tap precision (decimal points, dots on i, etc.)
+    const tool = (typeof App !== 'undefined') ? App.currentTool : 'pen';
+    const ctx  = getDrawCtx();
+    if (!ctx) return;
+    ctx.lineCap  = 'round';
+    ctx.lineJoin = 'round';
+
+    const penSz = (typeof App !== 'undefined') ? App.penSize : 3;
+    const curCol = (typeof App !== 'undefined') ? App.currentColor : '#ffffff';
+
+    if (tool === 'eraser') {
+      const eSize = (typeof App !== 'undefined' && App.eraserSize) ? App.eraserSize : penSz * 8;
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth   = eSize;
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
+      ctx.beginPath();
+      ctx.arc(x, y, eSize / 2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+      ctx.fill();
+    } else if (tool === 'highlighter') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.lineWidth   = penSz * 5;
+      ctx.strokeStyle = curCol + '60';
+      ctx.beginPath();
+      ctx.arc(x, y, (penSz * 5) / 2, 0, Math.PI * 2);
+      ctx.fillStyle = curCol + '60';
+      ctx.fill();
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.lineWidth   = penSz;
+      ctx.strokeStyle = curCol;
+      ctx.beginPath();
+      ctx.arc(x, y, penSz / 2, 0, Math.PI * 2);
+      ctx.fillStyle = curCol;
+      ctx.fill();
+    }
   }
 
   function continueStrokeAt(x, y) {
@@ -391,13 +428,74 @@ const Drawing = (() => {
   // ─────────────────────────────────────────────
   // ATTACH EVENTS
   // ─────────────────────────────────────────────
+  // Direct touch handlers for draw-canvas (eliminates touch-to-mouse synthesis latency)
+  function onDrawTouchStart(e) {
+    if (e.touches.length >= 3 && typeof GestureEraser !== 'undefined') {
+      e.preventDefault();
+      GestureEraser.handleTouchStart(e, (typeof Canvas !== 'undefined') ? Canvas.getPosFromTouch : null);
+      return;
+    }
+    if (typeof GestureEraser !== 'undefined' && GestureEraser.isActive()) {
+      e.preventDefault();
+      GestureEraser.handleTouchStart(e, (typeof Canvas !== 'undefined') ? Canvas.getPosFromTouch : null);
+      return;
+    }
+    if (e.touches.length === 2 && typeof Canvas !== 'undefined' && Canvas.handleTwoFingerTouchStart) {
+      e.preventDefault();
+      endStroke();
+      Canvas.handleTwoFingerTouchStart(e);
+      return;
+    }
+    if (e.touches.length === 1) {
+      e.preventDefault();
+      touchStart(e.touches[0]);
+    }
+  }
+
+  function onDrawTouchMove(e) {
+    if (typeof GestureEraser !== 'undefined' && (GestureEraser.isActive() || e.touches.length >= 3)) {
+      e.preventDefault();
+      GestureEraser.handleTouchMove(e, (typeof Canvas !== 'undefined') ? Canvas.getPosFromTouch : null);
+      return;
+    }
+    if (e.touches.length === 2 && typeof Canvas !== 'undefined' && Canvas.handleTwoFingerTouchMove) {
+      e.preventDefault();
+      Canvas.handleTwoFingerTouchMove(e);
+      return;
+    }
+    if (e.touches.length === 1) {
+      e.preventDefault();
+      touchMove(e.touches[0]);
+    }
+  }
+
+  function onDrawTouchEnd(e) {
+    if (typeof GestureEraser !== 'undefined' && GestureEraser.isActive()) {
+      e.preventDefault();
+      GestureEraser.handleTouchEnd(e);
+      return;
+    }
+    if (typeof Canvas !== 'undefined' && Canvas.handleTwoFingerTouchEnd) {
+      Canvas.handleTwoFingerTouchEnd(e);
+    }
+    touchEnd();
+  }
+
   function attachEvents() {
     const dc = getDrawCanvas();
-    // Mouse only — touch is routed via canvas.js shape canvas
+    if (!dc) return;
+
+    // Mouse events
     dc.addEventListener('mousedown',  onMouseDown);
     dc.addEventListener('mousemove',  onMouseMove);
     dc.addEventListener('mouseup',    onMouseUp);
     dc.addEventListener('mouseleave', onMouseUp);
+
+    // Direct touch events on draw-canvas — zero latency & multi-touch ready for SmartBoard
+    dc.addEventListener('touchstart',  onDrawTouchStart, { passive: false });
+    dc.addEventListener('touchmove',   onDrawTouchMove,  { passive: false });
+    dc.addEventListener('touchend',    onDrawTouchEnd,   { passive: false });
+    dc.addEventListener('touchcancel', onDrawTouchEnd,   { passive: false });
 
     setTimeout(createPreviewCanvas, 200);
   }

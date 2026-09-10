@@ -7,10 +7,10 @@ const UI = (() => {
   let panelOpen = false;
 
   const BOARD_COLORS = [
-    { id:'green', bg:'#0a1f0a', line:'rgba(255,255,255,0.09)', major:'rgba(255,255,255,0.16)', label:'Chalkboard Green' },
-    { id:'black', bg:'#000000', line:'rgba(255,255,255,0.08)', major:'rgba(255,255,255,0.15)', label:'Blackboard' },
-    { id:'navy',  bg:'#080f1f', line:'rgba(148,163,184,0.10)', major:'rgba(148,163,184,0.18)', label:'Dark Navy' },
-    { id:'white', bg:'#ffffff', line:'rgba(15,23,42,0.08)',    major:'rgba(15,23,42,0.14)',    label:'Whiteboard' },
+    { id:'green', bg:'#0e2419', line:'rgba(255,255,255,0.075)', major:'rgba(255,255,255,0.15)', label:'Chalkboard Green' },
+    { id:'black', bg:'#0b0d13', line:'rgba(255,255,255,0.07)',  major:'rgba(255,255,255,0.14)', label:'Blackboard' },
+    { id:'navy',  bg:'#0a1224', line:'rgba(148,163,184,0.08)', major:'rgba(148,163,184,0.16)', label:'Cosmic Navy' },
+    { id:'white', bg:'#ffffff', line:'rgba(15,23,42,0.07)',    major:'rgba(15,23,42,0.13)',    label:'Whiteboard' },
   ];
 
   // ─────────────────────────────────────────────
@@ -596,10 +596,14 @@ const UI = (() => {
   function renderQuickShelf(domain) {
     const shelf = document.getElementById('fsc-quick-shelf-container');
     if (!shelf) return;
+    shelf.classList.remove('domain-physics', 'domain-science');
+    if (domain === 'physics') shelf.classList.add('domain-physics');
+    else if (domain === 'science') shelf.classList.add('domain-science');
+
     if (domain === 'math') {
       shelf.innerHTML = `
         <div class="fsc-shelf-header">
-          <span class="fsc-shelf-title">⭐ QUICK MATH INSTRUMENTS</span>
+          <span class="fsc-shelf-title">⭐ QUICK MATH INSTRUMENTS &amp; LABS</span>
           <span class="fsc-shelf-tag">Live Tools</span>
         </div>
         <div class="fsc-quick-grid">
@@ -611,17 +615,49 @@ const UI = (() => {
             <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="11" stroke="#0284c7" stroke-width="1.8" stroke-dasharray="3,2" fill="#0284c7" fill-opacity=".08"/><line x1="16" y1="16" x2="27" y2="16" stroke="#eab308" stroke-width="1.5"/><circle cx="16" cy="16" r="2.2" fill="#ef4444"/><circle cx="27" cy="16" r="2" fill="#38bdf8"/><text x="21" y="13" font-size="6.5" font-weight="bold" fill="#eab308">r</text></svg>
             <span class="qlabel">Compass</span>
           </button>
-          <button class="fsc-quick-tool-btn" onclick="App.setTool('measure-angle'); UI.closeShapesFlyout(); App.showToast('📐 Angle Tool: Click Vertex, move to baseline, move to arm B');" title="Live Angle Measurement (θ°)">
-            <svg viewBox="0 0 32 32" fill="none"><line x1="4" y1="26" x2="28" y2="26" stroke="#0284c7" stroke-width="2" stroke-linecap="round"/><line x1="4" y1="26" x2="24" y2="6" stroke="#0284c7" stroke-width="2" stroke-linecap="round"/><path d="M14,26 A10,10 0 0,0 12,18" stroke="#f59e0b" stroke-width="1.8" fill="none"/><text x="17" y="19" font-size="7" font-weight="bold" fill="#f59e0b">θ°</text></svg>
-            <span class="qlabel">Angle (θ°)</span>
+          <button class="fsc-quick-tool-btn is-sim-btn" onclick="MathVisualizer.show('unitcircle'); UI.closeShapesFlyout();" title="⭕ Unit Circle &amp; Sine Wave Visualizer">
+            <svg viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="10" stroke="#0284c7" stroke-width="2" fill="none"/><line x1="16" y1="16" x2="23" y2="9" stroke="#eab308" stroke-width="2"/><circle cx="23" cy="9" r="2.5" fill="#ef4444"/><line x1="23" y1="9" x2="23" y2="16" stroke="#4ade80" stroke-width="1.5"/><line x1="16" y1="16" x2="23" y2="16" stroke="#38bdf8" stroke-width="1.8"/></svg>
+            <span class="qlabel">Unit Circle</span>
           </button>
-          <button class="fsc-quick-tool-btn" onclick="Canvas.addShape('protractor'); UI.closeShapesFlyout();" title="Protractor Overlay">
-            <svg viewBox="0 0 32 32" fill="none"><path d="M4,20 A12,12 0 0,1 28,20 Z" stroke="#0284c7" stroke-width="2" fill="#0284c7" fill-opacity=".12"/><line x1="4" y1="20" x2="28" y2="20" stroke="#0284c7" stroke-width="1.5"/><line x1="16" y1="20" x2="16" y2="8" stroke="#0284c7" stroke-width="1" stroke-dasharray="2,2"/></svg>
-            <span class="qlabel">Protractor</span>
+          <button class="fsc-quick-tool-btn is-sim-btn" onclick="MathVisualizer.show('calculus'); UI.closeShapesFlyout();" title="∫ Calculus, Tangents &amp; Integrals">
+            <svg viewBox="0 0 32 32" fill="none"><path d="M4,24 Q14,24 16,14 T28,4" stroke="#e8c96b" stroke-width="2" fill="none"/><line x1="8" y1="22" x2="24" y2="6" stroke="#f43f5e" stroke-width="1.8"/><rect x="11" y="15" width="4" height="9" fill="#38bdf8" fill-opacity=".3"/><rect x="15" y="11" width="4" height="13" fill="#38bdf8" fill-opacity=".3"/></svg>
+            <span class="qlabel">Calculus</span>
           </button>
-          <button class="fsc-quick-tool-btn" onclick="Canvas.addShape('number-line'); UI.closeShapesFlyout();" title="Interactive Number Line">
-            <svg viewBox="0 0 32 32" fill="none"><line x1="2" y1="16" x2="30" y2="16" stroke="#0284c7" stroke-width="2.5"/><line x1="10" y1="11" x2="10" y2="21" stroke="#0284c7" stroke-width="1.5"/><line x1="16" y1="11" x2="16" y2="21" stroke="#0284c7" stroke-width="1.5"/><line x1="22" y1="11" x2="22" y2="21" stroke="#0284c7" stroke-width="1.5"/></svg>
-            <span class="qlabel">Number Line</span>
+          <button class="fsc-quick-tool-btn is-sim-btn" onclick="GraphEngine.show(); UI.closeShapesFlyout();" title="📈 Live Graphs &amp; Statistics (Line, Bar, Pie, Scatter, Stats)">
+            <svg viewBox="0 0 32 32" fill="none"><polyline points="3,25 9,15 15,19 21,9 29,13" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="15" r="2.2" fill="#10b981"/><circle cx="15" cy="19" r="2.2" fill="#10b981"/><circle cx="21" cy="9" r="2.2" fill="#10b981"/><line x1="2" y1="28" x2="30" y2="28" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/></svg>
+            <span class="qlabel">Live Graphs</span>
+          </button>
+          <button class="fsc-quick-tool-btn is-sim-btn" onclick="MathVisualizer.show('geometry'); UI.closeShapesFlyout();" title="△ Dynamic Geometry Proofs (180° Sum, Pythagoras)">
+            <svg viewBox="0 0 32 32" fill="none"><polygon points="16,4 28,26 4,26" stroke="#0284c7" stroke-width="2" fill="none"/><circle cx="16" cy="4" r="2.5" fill="#facc15"/><circle cx="28" cy="26" r="2.5" fill="#facc15"/><circle cx="4" cy="26" r="2.5" fill="#facc15"/><path d="M7,26 A8,8 0 0,0 12,23" stroke="#38bdf8" stroke-width="1.5" fill="none"/></svg>
+            <span class="qlabel">Geo Proofs</span>
+          </button>
+        </div>`;
+    } else if (domain === 'physics') {
+      shelf.innerHTML = `
+        <div class="fsc-shelf-header">
+          <span class="fsc-shelf-title" style="color:#b45309;">⚡ QUICK PHYSICS SIMULATIONS</span>
+          <span class="fsc-shelf-tag" style="background:#d97706;">Interactive</span>
+        </div>
+        <div class="fsc-quick-grid">
+          <button class="fsc-quick-tool-btn is-sim-btn" onclick="PhysicsLab.show('projectile'); UI.closeShapesFlyout();" title="🚀 Projectile Motion Lab">
+            <svg viewBox="0 0 32 32" fill="none"><path d="M4,27 Q16,5 28,27" stroke="#d97706" stroke-width="2.5" stroke-linecap="round"/><circle cx="16" cy="10.5" r="3" fill="#f59e0b"/><line x1="2" y1="27" x2="30" y2="27" stroke="#78350f" stroke-width="1.8"/><circle cx="28" cy="27" r="2" fill="#ef4444"/></svg>
+            <span class="qlabel">Projectile</span>
+          </button>
+          <button class="fsc-quick-tool-btn is-sim-btn" onclick="PhysicsLab.show('pendulum'); UI.closeShapesFlyout();" title="⏱ Simple & Damped Pendulum">
+            <svg viewBox="0 0 32 32" fill="none"><line x1="8" y1="4" x2="24" y2="4" stroke="#78350f" stroke-width="2"/><line x1="16" y1="4" x2="23" y2="21" stroke="#d97706" stroke-width="1.8"/><circle cx="23" cy="21" r="5" fill="#f59e0b" stroke="#78350f" stroke-width="1.2"/><path d="M11,21 Q16,25 21,21" stroke="#d97706" stroke-width="1" stroke-dasharray="2,2"/></svg>
+            <span class="qlabel">Pendulum</span>
+          </button>
+          <button class="fsc-quick-tool-btn is-sim-btn" onclick="PhysicsLab.show('collision'); UI.closeShapesFlyout();" title="💥 1D/2D Collisions Lab">
+            <svg viewBox="0 0 32 32" fill="none"><line x1="2" y1="23" x2="30" y2="23" stroke="#78350f" stroke-width="1.8"/><rect x="4" y="13" width="9" height="7" rx="1.5" fill="#0284c7"/><rect x="19" y="13" width="9" height="7" rx="1.5" fill="#ea580c"/><circle cx="16" cy="16.5" r="3" fill="#eab308"/></svg>
+            <span class="qlabel">Collision</span>
+          </button>
+          <button class="fsc-quick-tool-btn is-sim-btn" onclick="PhysicsLab.show('incline'); UI.closeShapesFlyout();" title="📐 Inclined Plane & FBD">
+            <svg viewBox="0 0 32 32" fill="none"><polygon points="4,26 28,26 28,10" stroke="#78350f" stroke-width="1.8" fill="#fef3c7"/><rect x="13" y="12" width="7" height="6" transform="rotate(-33 13 12)" fill="#0284c7"/><line x1="15" y1="13" x2="11" y2="7" stroke="#ef4444" stroke-width="1.5"/></svg>
+            <span class="qlabel">Incline</span>
+          </button>
+          <button class="fsc-quick-tool-btn is-sim-btn" onclick="PhysicsLab.show('optics'); UI.closeShapesFlyout();" title="🔍 Optics & Thin Lens Ray Tracer">
+            <svg viewBox="0 0 32 32" fill="none"><line x1="4" y1="16" x2="28" y2="16" stroke="#c9a84c" stroke-width="1.5"/><line x1="16" y1="4" x2="16" y2="28" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2,2"/><line x1="6" y1="8" x2="16" y2="16" stroke="#ef4444" stroke-width="1.8"/><line x1="16" y1="16" x2="24" y2="26" stroke="#38bdf8" stroke-width="1.8"/></svg>
+            <span class="qlabel">Optics</span>
           </button>
         </div>`;
     } else {
@@ -661,10 +697,20 @@ const UI = (() => {
     if (domain === 'math') {
       tabsCont.innerHTML = `
         <button class="fsc-tab active" data-cat="all" onclick="UI.filterShapesCategory('all')">All</button>
+        <button class="fsc-tab" data-cat="labs" onclick="UI.filterShapesCategory('labs')">⭐ Visual Labs</button>
         <button class="fsc-tab" data-cat="tools" onclick="UI.filterShapesCategory('tools')">📐 Tools</button>
         <button class="fsc-tab" data-cat="2d" onclick="UI.filterShapesCategory('2d')">🔷 2D Shapes</button>
         <button class="fsc-tab" data-cat="3d" onclick="UI.filterShapesCategory('3d')">🧊 3D Solids</button>
         <button class="fsc-tab" data-cat="lines" onclick="UI.filterShapesCategory('lines')">↗️ Lines</button>
+      `;
+    } else if (domain === 'physics') {
+      tabsCont.innerHTML = `
+        <button class="fsc-tab active" data-cat="all" onclick="UI.filterShapesCategory('all')">All</button>
+        <button class="fsc-tab" data-cat="mechanics" onclick="UI.filterShapesCategory('mechanics')">🚀 Mechanics</button>
+        <button class="fsc-tab" data-cat="oscillations" onclick="UI.filterShapesCategory('oscillations')">⏱ Oscillations</button>
+        <button class="fsc-tab" data-cat="optics" onclick="UI.filterShapesCategory('optics')">🔍 Optics</button>
+        <button class="fsc-tab" data-cat="circuits" onclick="UI.filterShapesCategory('circuits')">⚡ E&M</button>
+        <button class="fsc-tab" data-cat="thermo" onclick="UI.filterShapesCategory('thermo')">🔥 Thermo</button>
       `;
     } else {
       tabsCont.innerHTML = `
@@ -683,8 +729,10 @@ const UI = (() => {
     activeShapesDomain = domain || 'math';
     const btnMath = document.getElementById('fsc-btn-math');
     const btnSci = document.getElementById('fsc-btn-science');
+    const btnPhys = document.getElementById('fsc-btn-physics');
     if (btnMath) btnMath.classList.toggle('active', activeShapesDomain === 'math');
     if (btnSci) btnSci.classList.toggle('active', activeShapesDomain === 'science');
+    if (btnPhys) btnPhys.classList.toggle('active', activeShapesDomain === 'physics');
 
     renderQuickShelf(activeShapesDomain);
     renderShapesTabs(activeShapesDomain);
@@ -699,13 +747,26 @@ const UI = (() => {
     const grid = document.getElementById('shape-grid');
     if (!grid) return;
 
-    // Header strictly shows "Shapes"
+    // Flyout header indicator
     const fscTitle = document.getElementById('fsc-title-text');
     const fscIcon = document.getElementById('fsc-subject-icon');
-    if (fscTitle) fscTitle.textContent = 'Shapes';
-    if (fscIcon) fscIcon.textContent = activeShapesDomain === 'science' ? '🔬' : '🔷';
+    if (fscTitle) fscTitle.textContent = activeShapesDomain === 'physics' ? 'Physics' : (activeShapesDomain === 'science' ? 'Science' : 'Shapes');
+    if (fscIcon) fscIcon.textContent = activeShapesDomain === 'physics' ? '⚡' : (activeShapesDomain === 'science' ? '🔬' : '🔷');
 
     const MATH_SECTIONS = [
+      {
+        label: '⭐ Interactive Visual Math Labs',
+        cat: 'labs',
+        shapes: [
+          { isGraphTool: true, t:'tool-graphs', l:'Live Graphs', desc:'Line, Bar, Pie, Scatter & Statistics', svg:'<polyline points="3,25 9,15 15,19 21,9 29,13" stroke="#10b981" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="15" r="2.2" fill="#10b981"/><circle cx="15" cy="19" r="2.2" fill="#10b981"/><circle cx="21" cy="9" r="2.2" fill="#10b981"/><line x1="2" y1="28" x2="30" y2="28" stroke="currentColor" stroke-width="1.5"/>' },
+          { isMathLab: true, modId: 'unitcircle', t:'lab-unitcircle', l:'Unit Circle', desc:'Trig Coordinates & Live Sine Wave', svg:'<circle cx="16" cy="16" r="11" stroke="#0284c7" stroke-width="2" fill="none"/><line x1="16" y1="16" x2="24" y2="9" stroke="#eab308" stroke-width="2"/><circle cx="24" cy="9" r="2.5" fill="#ef4444"/><line x1="24" y1="9" x2="24" y2="16" stroke="#4ade80" stroke-width="1.5" stroke-dasharray="2,1"/><line x1="16" y1="16" x2="24" y2="16" stroke="#38bdf8" stroke-width="1.8"/>' },
+          { isMathLab: true, modId: 'calculus',   t:'lab-calculus',   l:'Calculus Lab', desc:'Tangents, Derivatives & Integrals', svg:'<path d="M4,24 Q14,24 16,14 T28,4" stroke="#e8c96b" stroke-width="2" fill="none"/><line x1="8" y1="22" x2="24" y2="6" stroke="#f43f5e" stroke-width="1.8"/><rect x="11" y="15" width="4" height="9" fill="#38bdf8" fill-opacity=".3"/><rect x="15" y="11" width="4" height="13" fill="#38bdf8" fill-opacity=".3"/>' },
+          { isMathLab: true, modId: 'geometry',   t:'lab-geometry',   l:'Geometry Proofs', desc:'180° Sum, Circle Angle, Pythagoras', svg:'<polygon points="16,4 28,26 4,26" stroke="#c9a84c" stroke-width="2" fill="currentColor" fill-opacity=".08"/><circle cx="16" cy="4" r="2.5" fill="#facc15"/><circle cx="28" cy="26" r="2.5" fill="#facc15"/><circle cx="4" cy="26" r="2.5" fill="#facc15"/><path d="M7,26 A8,8 0 0,0 12,23" stroke="#38bdf8" stroke-width="1.5" fill="none"/>' },
+          { isMathLab: true, modId: 'vectors',    t:'lab-vectors',    l:'Vectors 2D', desc:'Vector Addition & Parallelogram', svg:'<line x1="6" y1="24" x2="24" y2="8" stroke="#facc15" stroke-width="2.2"/><polygon points="24,8 18,9 23,14" fill="#facc15"/><line x1="6" y1="24" x2="22" y2="24" stroke="#38bdf8" stroke-width="1.8"/><line x1="6" y1="24" x2="10" y2="10" stroke="#4ade80" stroke-width="1.8"/>' },
+          { isMathLab: true, modId: 'sequences',  t:'lab-sequences',  l:'Sequences ∑', desc:'Arithmetic & Geometric Series', svg:'<line x1="4" y1="26" x2="28" y2="26" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="22" r="2" fill="#e8c96b"/><circle cx="13" cy="18" r="2" fill="#e8c96b"/><circle cx="18" cy="13" r="2" fill="#e8c96b"/><circle cx="23" cy="7" r="2" fill="#e8c96b"/><line x1="8" y1="22" x2="23" y2="7" stroke="#38bdf8" stroke-width="1.2" stroke-dasharray="2,2"/>' },
+          { isMathLab: true, modId: 'transforms', t:'lab-transforms', l:'Transforms ↻', desc:'Rotations, Scale & Reflections', svg:'<polygon points="16,8 24,22 8,22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2,2" fill="none"/><polygon points="22,14 26,24 12,20" stroke="#e8c96b" stroke-width="2" fill="#c9a84c" fill-opacity=".2"/><path d="M22,6 A10,10 0 0,1 26,14" stroke="#38bdf8" stroke-width="1.5" fill="none"/>' }
+        ]
+      },
       {
         label: '📐 Geometry Instruments',
         cat: 'tools',
@@ -837,14 +898,71 @@ const UI = (() => {
       }
     ];
 
-    const SECTIONS = activeShapesDomain === 'science' ? SCIENCE_SECTIONS : MATH_SECTIONS;
+    const PHYSICS_SECTIONS = [
+      {
+        label: '🚀 Mechanics & Kinematics',
+        cat: 'mechanics',
+        shapes: [
+          { isSim: true, simId: 'projectile', t:'sim-projectile', l:'Projectile Lab', desc:'Trajectory, Drag & Apex', svg:'<path d="M4,27 Q16,5 28,27" stroke="#d97706" stroke-width="2.5" stroke-linecap="round"/><circle cx="16" cy="10.5" r="3.5" fill="#f59e0b"/><line x1="2" y1="27" x2="30" y2="27" stroke="currentColor" stroke-width="1.8"/><circle cx="28" cy="27" r="2" fill="#ef4444"/>' },
+          { isSim: true, simId: 'pendulum', t:'sim-pendulum', l:'Pendulum Lab', desc:'Simple & Damped Harmonic', svg:'<line x1="8" y1="4" x2="24" y2="4" stroke="currentColor" stroke-width="2.2"/><line x1="16" y1="4" x2="24" y2="21" stroke="#d97706" stroke-width="2"/><circle cx="24" cy="21" r="5.5" fill="#f59e0b" stroke="currentColor" stroke-width="1.2"/><path d="M10,21 Q16,25 22,21" stroke="#d97706" stroke-width="1.2" stroke-dasharray="2,2"/>' },
+          { isSim: true, simId: 'collision', t:'sim-collision', l:'Collisions 1D', desc:'Momentum & Restitution', svg:'<line x1="2" y1="23" x2="30" y2="23" stroke="currentColor" stroke-width="2"/><rect x="4" y="13" width="9" height="7" rx="1.5" fill="#0284c7"/><rect x="19" y="13" width="9" height="7" rx="1.5" fill="#ea580c"/><circle cx="16" cy="16.5" r="3" fill="#eab308"/><line x1="6" y1="9" x2="11" y2="9" stroke="#0284c7" stroke-width="1.5"/><line x1="26" y1="9" x2="21" y2="9" stroke="#ea580c" stroke-width="1.5"/>' },
+          { isSim: true, simId: 'incline', t:'sim-incline', l:'Incline & FBD', desc:'Gravity, Friction & Slopes', svg:'<polygon points="4,26 28,26 28,10" stroke="currentColor" stroke-width="2" fill="currentColor" fill-opacity=".12"/><rect x="13" y="12" width="8" height="6" rx="1" transform="rotate(-33 13 12)" fill="#0284c7"/><line x1="15" y1="13" x2="11" y2="7" stroke="#ef4444" stroke-width="1.8"/>' },
+          { t:'sc-force-vector',  l:'Force Vector', svg:'<line x1="4" y1="16" x2="26" y2="16" stroke="currentColor" stroke-width="2"/><polygon points="26,16 20,12 20,20" fill="currentColor"/><text x="14" y="11" text-anchor="middle" font-size="8" fill="currentColor">F</text>' },
+          { t:'sc-motion-arrow',  l:'Velocity',     svg:'<path d="M4,16 C10,8 20,8 26,16" stroke="currentColor" stroke-width="1.8" fill="none" stroke-dasharray="3,2"/><polygon points="27,16 21,13 22,19" fill="currentColor"/><text x="16" y="24" text-anchor="middle" font-size="8" fill="currentColor">v</text>' },
+          { t:'sc-free-body',     l:'Free Body',    svg:'<circle cx="16" cy="16" r="5" fill="currentColor" fill-opacity=".3"/><line x1="16" y1="4" x2="16" y2="11" stroke="currentColor" stroke-width="1.5"/><polygon points="16,3 13,9 19,9" fill="currentColor"/><line x1="16" y1="21" x2="16" y2="29" stroke="currentColor" stroke-width="1.5"/><polygon points="16,30 13,24 19,24" fill="currentColor"/><line x1="4" y1="16" x2="11" y2="16" stroke="currentColor" stroke-width="1.5"/><polygon points="3,16 9,13 9,19" fill="currentColor"/>' },
+          { t:'sc-pulley',        l:'Pulley Sys',   svg:'<circle cx="16" cy="11" r="7" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="9" y1="11" x2="9" y2="28" stroke="currentColor" stroke-width="1.2"/><line x1="23" y1="11" x2="23" y2="24" stroke="currentColor" stroke-width="1.2"/><rect x="5" y="25" width="8" height="6" stroke="currentColor" stroke-width="1" fill="currentColor" fill-opacity=".2"/>' },
+        ]
+      },
+      {
+        label: '🌊 Waves & Superposition',
+        cat: 'oscillations',
+        shapes: [
+          { isSim: true, simId: 'waves', t:'sim-waves', l:'Waves Lab', desc:'Standing & Traveling Harmonics', svg:'<path d="M3,16 Q9,6 16,16 T29,16" stroke="#38bdf8" stroke-width="2.5" fill="none"/><circle cx="3" cy="16" r="2.5" fill="#ef4444"/><circle cx="16" cy="16" r="2.5" fill="#ef4444"/><circle cx="29" cy="16" r="2.5" fill="#ef4444"/><circle cx="9.5" cy="11" r="2" fill="#4ade80"/><circle cx="22.5" cy="21" r="2" fill="#4ade80"/>' },
+          { t:'sc-compass',       l:'Compass',      svg:'<circle cx="16" cy="16" r="12" stroke="currentColor" stroke-width="1.5" fill="none"/><polygon points="16,6 19,16 16,14 13,16" fill="currentColor"/><polygon points="16,26 19,16 16,14 13,16" fill="currentColor" fill-opacity=".3"/>' },
+        ]
+      },
+      {
+        label: '🔍 Optics & Snell\'s Law',
+        cat: 'optics',
+        shapes: [
+          { isSim: true, simId: 'optics', t:'sim-optics', l:'Optics Lab', desc:'Refraction & Thin Lens Tracer', svg:'<line x1="4" y1="16" x2="28" y2="16" stroke="#c9a84c" stroke-width="2"/><line x1="16" y1="4" x2="16" y2="28" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2,2"/><line x1="6" y1="7" x2="16" y2="16" stroke="#ef4444" stroke-width="2.2"/><line x1="16" y1="16" x2="25" y2="27" stroke="#38bdf8" stroke-width="2.2"/><circle cx="16" cy="16" r="2.5" fill="#facc15"/>' },
+          { t:'sc-convex-lens',   l:'Conv.Lens',    svg:'<path d="M16,4 Q26,16 16,28 Q6,16 16,4" stroke="currentColor" stroke-width="1.5" fill="currentColor" fill-opacity=".12"/><line x1="2" y1="16" x2="30" y2="16" stroke="currentColor" stroke-width="1" stroke-dasharray="3,2"/>' },
+          { t:'sc-concave-lens',  l:'Conc.Lens',    svg:'<path d="M12,4 Q18,16 12,28" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M20,4 Q14,16 20,28" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="16" x2="30" y2="16" stroke="currentColor" stroke-width="1" stroke-dasharray="3,2"/>' },
+          { t:'sc-optical-ray',   l:'Light Ray',    svg:'<line x1="3" y1="16" x2="27" y2="16" stroke="currentColor" stroke-width="2"/><polygon points="18,16 13,12 13,20" fill="currentColor"/>' },
+        ]
+      },
+      {
+        label: '⚡ Electricity & Lorentz Force',
+        cat: 'circuits',
+        shapes: [
+          { isSim: true, simId: 'circuits', t:'sim-circuits', l:'Circuits Lab', desc:'Ohm\'s Law & B-Field Motion', svg:'<rect x="5" y="7" width="22" height="18" rx="2" stroke="#64748b" stroke-width="2" fill="none"/><line x1="12" y1="7" x2="14" y2="4" stroke="#e8c96b" stroke-width="2"/><line x1="14" y1="4" x2="18" y2="10" stroke="#e8c96b" stroke-width="2"/><line x1="18" y1="10" x2="20" y2="7" stroke="#e8c96b" stroke-width="2"/><circle cx="16" cy="25" r="2.5" fill="#38bdf8"/>' },
+          { t:'sc-battery',       l:'Battery',      svg:'<line x1="4" y1="16" x2="28" y2="16" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="10" x2="10" y2="22" stroke="currentColor" stroke-width="2.5"/><line x1="16" y1="12" x2="16" y2="20" stroke="currentColor" stroke-width="1.5"/><line x1="22" y1="10" x2="22" y2="22" stroke="currentColor" stroke-width="2.5"/><line x1="26" y1="12" x2="26" y2="20" stroke="currentColor" stroke-width="1.5"/>' },
+          { t:'sc-resistor',      l:'Resistor',     svg:'<line x1="2" y1="16" x2="7" y2="16" stroke="currentColor" stroke-width="1.5"/><rect x="7" y="11" width="18" height="10" stroke="currentColor" stroke-width="1.5" fill="currentColor" fill-opacity=".12"/><line x1="25" y1="16" x2="30" y2="16" stroke="currentColor" stroke-width="1.5"/>' },
+          { t:'sc-bulb',          l:'Bulb',         svg:'<circle cx="16" cy="14" r="9" stroke="currentColor" stroke-width="1.5" fill="currentColor" fill-opacity=".1"/><line x1="12" y1="11" x2="20" y2="17" stroke="currentColor" stroke-width="1.2"/><line x1="20" y1="11" x2="12" y2="17" stroke="currentColor" stroke-width="1.2"/><line x1="13" y1="23" x2="19" y2="23" stroke="currentColor" stroke-width="1.5"/><line x1="14" y1="26" x2="18" y2="26" stroke="currentColor" stroke-width="1.5"/>' },
+          { t:'sc-bar-magnet',    l:'Bar Magnet',   svg:'<rect x="2" y="11" width="28" height="10" rx="2" stroke="currentColor" stroke-width="1.5" fill="none"/><rect x="2" y="11" width="14" height="10" fill="currentColor" fill-opacity=".3"/><text x="9" y="19" text-anchor="middle" font-size="8" fill="currentColor" font-weight="700">N</text><text x="23" y="19" text-anchor="middle" font-size="8" fill="currentColor">S</text>' },
+        ]
+      },
+      {
+        label: '🔥 Thermodynamics & Gas Laws',
+        cat: 'thermo',
+        shapes: [
+          { isSim: true, simId: 'thermodynamics', t:'sim-thermodynamics', l:'Thermo Lab', desc:'Kinetic Gas & P-V Chamber', svg:'<rect x="4" y="6" width="24" height="20" rx="2" stroke="currentColor" stroke-width="2" fill="currentColor" fill-opacity=".08"/><line x1="20" y1="6" x2="20" y2="26" stroke="#c9a84c" stroke-width="2.5"/><circle cx="10" cy="12" r="2" fill="#ef4444"/><circle cx="15" cy="19" r="2" fill="#38bdf8"/><circle cx="8" cy="21" r="2" fill="#facc15"/><circle cx="13" cy="9" r="2" fill="#4ade80"/>' },
+          { t:'sc-bunsen',        l:'Bunsen',       svg:'<line x1="16" y1="12" x2="16" y2="26" stroke="currentColor" stroke-width="3"/><line x1="8" y1="26" x2="24" y2="26" stroke="currentColor" stroke-width="2.5"/><path d="M16,12 Q19,6 16,2 Q13,6 16,12 Z" fill="currentColor" fill-opacity=".4"/>' },
+          { t:'sc-erlenmeyer',    l:'Flask',        svg:'<polygon points="13,4 19,4 27,26 5,26" stroke="currentColor" stroke-width="1.5" fill="currentColor" fill-opacity=".1"/><line x1="11" y1="4" x2="21" y2="4" stroke="currentColor" stroke-width="2"/>' },
+        ]
+      }
+    ];
+
+    const SECTIONS = activeShapesDomain === 'physics'
+      ? PHYSICS_SECTIONS
+      : (activeShapesDomain === 'science' ? SCIENCE_SECTIONS : MATH_SECTIONS);
 
     grid.innerHTML = '';
     SECTIONS.forEach(sec => {
       // Section label
       const lbl = document.createElement('div');
       lbl.className = 'fsc-sec-hdr';
-      lbl.dataset.cat = sec.cat || (activeShapesDomain === 'science' ? 'circuits' : '2d');
+      lbl.dataset.cat = sec.cat || (activeShapesDomain === 'physics' ? 'mechanics' : (activeShapesDomain === 'science' ? 'circuits' : '2d'));
       lbl.innerHTML = `<span>${sec.label}</span><span class="fsc-badge">${sec.shapes.length}</span>`;
       grid.appendChild(lbl);
 
@@ -852,11 +970,36 @@ const UI = (() => {
         const btn = document.createElement('button');
         btn.className = 'shape-btn';
         if (s.isTool) btn.classList.add('is-tool-btn');
-        btn.dataset.cat = sec.cat || (activeShapesDomain === 'science' ? 'circuits' : '2d');
-        btn.title = s.l;
+        if (s.isSim || s.isMathLab) btn.classList.add('is-sim-btn');
+        btn.dataset.cat = sec.cat || (activeShapesDomain === 'physics' ? 'mechanics' : (activeShapesDomain === 'science' ? 'circuits' : '2d'));
+        btn.title = s.l + (s.desc ? ` - ${s.desc}` : '');
         btn.innerHTML = `<svg viewBox="0 0 32 32" fill="none" style="color:currentColor">${s.svg}</svg><span class="sl">${s.l}</span>`;
         btn.addEventListener('click', () => {
-          if (s.isTool) {
+          if (s.isGraphTool) {
+            if (typeof GraphEngine !== 'undefined' && GraphEngine.show) {
+              GraphEngine.show();
+              UI.closeShapesFlyout();
+              if (typeof App !== 'undefined' && App.showToast) {
+                App.showToast('📈 Opened Live Graphs & Statistics!');
+              }
+            }
+          } else if (s.isMathLab) {
+            if (typeof MathVisualizer !== 'undefined' && MathVisualizer.show) {
+              MathVisualizer.show(s.modId);
+              UI.closeShapesFlyout();
+              if (typeof App !== 'undefined' && App.showToast) {
+                App.showToast(`📐 Opened ${s.l}!`);
+              }
+            }
+          } else if (s.isSim) {
+            if (typeof PhysicsLab !== 'undefined' && PhysicsLab.show) {
+              PhysicsLab.show(s.simId);
+              UI.closeShapesFlyout();
+              if (typeof App !== 'undefined' && App.showToast) {
+                App.showToast(`⚡ Opened ${s.l} simulation!`);
+              }
+            }
+          } else if (s.isTool) {
             if (typeof App !== 'undefined' && App.setTool) {
               App.setTool(s.t);
               UI.closeShapesFlyout();
@@ -1104,14 +1247,27 @@ const UI = (() => {
   function toggleChapterPanel() {
     panelOpen = !panelOpen;
     const panel = document.getElementById('chapter-panel');
-    panel.classList.toggle('open', panelOpen);
+    if (panel) panel.classList.toggle('open', panelOpen);
     if (panelOpen) renderChapterPanel();
   }
 
   function openChapterPanel() {
     panelOpen = true;
-    document.getElementById('chapter-panel').classList.add('open');
-    renderChapterPanel();
+    const panel = document.getElementById('chapter-panel');
+    if (panel) {
+      panel.classList.add('open');
+      renderChapterPanel();
+    }
+  }
+
+  function closeChapterPanel() {
+    panelOpen = false;
+    const panel = document.getElementById('chapter-panel');
+    if (panel) panel.classList.remove('open');
+  }
+
+  function isChapterPanelOpen() {
+    return panelOpen;
   }
 
   function renderScienceChapterPanel() {
@@ -1481,7 +1637,7 @@ const UI = (() => {
     showPropPanel, hidePropPanel,
     toggleShapesSection,
     toggleDropdown, closeAllDropdowns,
-    toggleChapterPanel, openChapterPanel, renderChapterPanel, renderScienceChapterPanel,
+    toggleChapterPanel, openChapterPanel, closeChapterPanel, isChapterPanelOpen, renderChapterPanel, renderScienceChapterPanel,
     updateStatus, rebuildForSubject,
     renderTopChapters, updateTopChapterBadge, toggleSubjectDropdown,
     togglePenFlyout, openPenFlyout, closePenFlyout,
