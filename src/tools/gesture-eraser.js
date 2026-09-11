@@ -73,8 +73,16 @@ const GestureEraser = (() => {
     const ac = getAuraCanvas();
     if (!ctx || !ac) return;
 
-    ctx.clearRect(0, 0, ac.width, ac.height);
+    const dpr = (typeof Canvas !== 'undefined' && Canvas.getDPR) ? Canvas.getDPR() : (window.devicePixelRatio || 1);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const zone = document.getElementById('canvas-zone');
+    const w = zone ? zone.offsetWidth : ac.width;
+    const h = zone ? zone.offsetHeight : ac.height;
+    ctx.clearRect(0, 0, w, h);
     ctx.save();
+    if (typeof Canvas !== 'undefined' && Canvas.applyTransformToCtx) {
+      Canvas.applyTransformToCtx(ctx);
+    }
 
     // Subtle glowing eraser aura circle with inner soft gradient
     const grad = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r);
@@ -218,11 +226,14 @@ const GestureEraser = (() => {
 
   // Smoothly erase raster strokes on draw-canvas and intersecting shapes
   function performErase(cx, cy, r, prev) {
-    // 1. Erase raster drawing strokes on draw-canvas
+    // 1. Erase raster drawing strokes on draw-canvas and vector strokes
     if (typeof Canvas !== 'undefined') {
       const ctx = Canvas.getDrawCtx();
       if (ctx) {
         ctx.save();
+        const dpr = Canvas.getDPR ? Canvas.getDPR() : (window.devicePixelRatio || 1);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        if (Canvas.applyTransformToCtx) Canvas.applyTransformToCtx(ctx);
         ctx.globalCompositeOperation = 'destination-out';
         ctx.lineCap  = 'round';
         ctx.lineJoin = 'round';
@@ -244,6 +255,9 @@ const GestureEraser = (() => {
         ctx.fill();
 
         ctx.restore();
+      }
+      if (Canvas.eraseAtPoint) {
+        Canvas.eraseAtPoint(cx, cy, r);
       }
     }
 

@@ -160,6 +160,7 @@ const App = (() => {
 
   function saveCurrent() {
     pages[currentPage].shapes       = Canvas.getShapes();
+    pages[currentPage].strokes      = (typeof Canvas !== 'undefined' && Canvas.getStrokes) ? Canvas.getStrokes() : [];
     pages[currentPage].drawData     = Canvas.getDrawData();    // in-memory ImageData (fast page switching)
     pages[currentPage].drawDataUrl  = Canvas.getDrawDataUrl(); // base64 PNG string (persisted to file)
     pages[currentPage].bgImage      = Canvas.getBgImage();
@@ -175,7 +176,8 @@ const App = (() => {
     const drawSrc = (drawData instanceof ImageData)
       ? drawData
       : (pages[currentPage].drawDataUrl || null);
-    Canvas.loadPageState(pages[currentPage].shapes, drawSrc, pages[currentPage].bgImage || null);
+    const strokes = pages[currentPage].strokes || [];
+    Canvas.loadPageState(pages[currentPage].shapes, drawSrc, pages[currentPage].bgImage || null, strokes);
     UI.updateStatus();
   }
 
@@ -363,7 +365,7 @@ const App = (() => {
       if (pages[i].boardColorId && typeof Canvas !== 'undefined' && Canvas.setBoardColor) {
         Canvas.setBoardColor(pages[i].boardColorId);
       }
-      Canvas.loadPageState(pages[i].shapes, pages[i].drawData, pages[i].bgImage || null);
+      Canvas.loadPageState(pages[i].shapes, pages[i].drawData, pages[i].bgImage || null, pages[i].strokes || []);
       // Wait for canvas to fully paint
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       await new Promise(r => setTimeout(r, 150));
@@ -376,7 +378,7 @@ const App = (() => {
     if (pages[savedPage].boardColorId && typeof Canvas !== 'undefined' && Canvas.setBoardColor) {
       Canvas.setBoardColor(pages[savedPage].boardColorId);
     }
-    Canvas.loadPageState(pages[savedPage].shapes, pages[savedPage].drawData, pages[savedPage].bgImage || null);
+    Canvas.loadPageState(pages[savedPage].shapes, pages[savedPage].drawData, pages[savedPage].bgImage || null, pages[savedPage].strokes || []);
     currentPage = savedPage;
     renderPageTabs();
 

@@ -57,6 +57,7 @@ const Canvas = (() => {
   }
 
   let shapes    = [];
+  let strokes   = []; // Vector stroke objects: { id, tool, color, size, points: [{x, y, p}] }
   let history   = [];
   let redoStack = [];
   let selected  = null;
@@ -82,6 +83,61 @@ const Canvas = (() => {
   const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
 
   // ─────────────────────────────────────────────
+  // COORDINATE MAPPER (Inverse Transformation Matrix)
+  // Screen / Pointer Coordinates -> Board Coordinates
+  // ─────────────────────────────────────────────
+  function getScreenPos(e) {
+    const zone = document.getElementById('canvas-zone');
+    const rect = zone ? zone.getBoundingClientRect() : { left: 0, top: 0 };
+    let clientX = 0, clientY = 0;
+    if (e.clientX !== undefined) {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    } else if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches.length > 0) {
+      clientX = e.changedTouches[0].clientX;
+      clientY = e.changedTouches[0].clientY;
+    }
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
+  }
+
+  function screenToBoard(screenX, screenY) {
+    return {
+      x: (screenX - panX) / zoomLevel,
+      y: (screenY - panY) / zoomLevel
+    };
+  }
+
+  function boardToScreen(boardX, boardY) {
+    return {
+      x: boardX * zoomLevel + panX,
+      y: boardY * zoomLevel + panY
+    };
+  }
+
+  function getBoardPos(e) {
+    const sp = getScreenPos(e);
+    return screenToBoard(sp.x, sp.y);
+  }
+
+  function getPosFromEvent(e) { return getBoardPos(e); }
+  function getPosFromTouch(t) { return getBoardPos(t); }
+
+  function applyTransformToCtx(ctx) {
+    if (!ctx) return;
+    ctx.setTransform(
+      currentDPR * zoomLevel, 0,
+      0, currentDPR * zoomLevel,
+      currentDPR * panX, currentDPR * panY
+    );
+  }
+
+  // ─────────────────────────────────────────────
   function init() {
     gridCtx  = document.getElementById('grid-canvas').getContext('2d');
     shapeCtx = document.getElementById('shape-canvas').getContext('2d');
@@ -93,14 +149,15 @@ const Canvas = (() => {
     const sc = document.getElementById('shape-canvas');
     const zone = document.getElementById('canvas-zone');
 
-    // ── Mouse events ──
-    sc.addEventListener('mousedown',  onPointerDown);
-    sc.addEventListener('mousemove',  onPointerMove);
-    sc.addEventListener('mouseup',    onPointerUp);
-    sc.addEventListener('dblclick',   onDblClick);
-    sc.addEventListener('mousemove',  onCursorPos);
+    // ── Pointer events on shape canvas (mouse, touch, stylus) ──
+    sc.addEventListener('pointerdown',   onPointerDown);
+    sc.addEventListener('pointermove',   onPointerMove);
+    sc.addEventListener('pointerup',     onPointerUp);
+    sc.addEventListener('pointercancel', onPointerUp);
+    sc.addEventListener('dblclick',      onDblClick);
+    sc.addEventListener('pointermove',   onCursorPos);
 
-    // ── Touch events — ALL on shape canvas ──
+    // ── Touch events on shape canvas for 3+ finger gesture eraser and 2-finger pinch ──
     sc.addEventListener('touchstart',  onTouchStart,  { passive: false });
     sc.addEventListener('touchmove',   onTouchMove,   { passive: false });
     sc.addEventListener('touchend',    onTouchEnd,    { passive: false });
@@ -192,6 +249,7 @@ const Canvas = (() => {
     applyDPR(sp);
     drawGrid();
     renderShapes();
+    renderStrokes();
   }
 
   // ─────────────────────────────────────────────
@@ -543,13 +601,158 @@ const Canvas = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // RENDER
+  // RENDER & STROKES
   // ─────────────────────────────────────────────
   function renderShapes() {
+    if (!shapeCtx) return;
+    shapeCtx.save();
+    shapeCtx.setTransform(currentDPR, 0, 0, currentDPR, 0, 0);
     shapeCtx.clearRect(0, 0, W, H);
+    applyTransformToCtx(shapeCtx);
     shapes.forEach(s => Shapes.draw(shapeCtx, s));
+    shapeCtx.restore();
     updateFormulaBadge();
     updateFloatingToolbar();
+  }
+
+  function getStrokes() {
+    return strokes;
+  }
+
+  function setStrokes(newStrokes) {
+    strokes = Array.isArray(newStrokes) ? newStrokes : [];
+    renderStrokes();
+  }
+
+  function addStroke(stroke) {
+    if (stroke && stroke.points && stroke.points.length > 0) {
+      strokes.push(stroke);
+      saveHistory();
+    }
+  }
+
+  function eraseAtPoint(bx, by, radius) {
+    let changed = false;
+    strokes = strokes.filter(s => {
+      const strokeR = (s.size || 3) / 2;
+      const threshold = radius + strokeR;
+      const hit = s.points.some(p => Math.hypot(p.x - bx, p.y - by) <= threshold);
+      if (hit) {
+        changed = true;
+        return false;
+      }
+      return true;
+    });
+    if (changed) {
+      saveHistory();
+    }
+  }
+
+  function drawSingleStroke(ctx, s) {
+    if (!s || !s.points || s.points.length === 0) return;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const tool = s.tool || 'pen';
+    const size = s.size || 3;
+    const col  = s.color || '#ffffff';
+
+    if (tool === 'eraser') {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = size;
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+    } else if (tool === 'highlighter') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.lineWidth = size * 5;
+      const alphaCol = (typeof col === 'string' && col.startsWith('#') && col.length === 7) ? col + '60' : col;
+      ctx.strokeStyle = alphaCol;
+      ctx.fillStyle = alphaCol;
+    } else if (tool === 'dashed') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.lineWidth = size;
+      ctx.strokeStyle = col;
+      ctx.setLineDash([size * 5, size * 3]);
+    } else if (tool === 'dotted') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.lineWidth = size * 1.5;
+      ctx.strokeStyle = col;
+      ctx.setLineDash([size * 0.5, size * 4]);
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.lineWidth = size;
+      ctx.strokeStyle = col;
+      ctx.fillStyle = col;
+      ctx.setLineDash([]);
+    }
+
+    const pts = s.points;
+    if (pts.length === 1) {
+      ctx.beginPath();
+      ctx.arc(pts[0].x, pts[0].y, ctx.lineWidth / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    if (tool === 'line' || tool === 'dashed' || tool === 'dotted' || tool === 'arrow' || tool === 'dbl-arrow') {
+      const pStart = pts[0];
+      const pEnd = pts[pts.length - 1];
+      ctx.beginPath();
+      ctx.moveTo(pStart.x, pStart.y);
+      ctx.lineTo(pEnd.x, pEnd.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const isArrow = (tool === 'arrow' || tool === 'dbl-arrow');
+      const isDblArrow = (tool === 'dbl-arrow');
+      if (isArrow) {
+        const angle = Math.atan2(pEnd.y - pStart.y, pEnd.x - pStart.x);
+        const hl = Math.max(14, size * 5);
+        ctx.lineWidth = size;
+        ctx.beginPath();
+        ctx.moveTo(pEnd.x, pEnd.y);
+        ctx.lineTo(pEnd.x - hl * Math.cos(angle - Math.PI / 7), pEnd.y - hl * Math.sin(angle - Math.PI / 7));
+        ctx.moveTo(pEnd.x, pEnd.y);
+        ctx.lineTo(pEnd.x - hl * Math.cos(angle + Math.PI / 7), pEnd.y - hl * Math.sin(angle + Math.PI / 7));
+        ctx.stroke();
+
+        if (isDblArrow) {
+          ctx.beginPath();
+          ctx.moveTo(pStart.x, pStart.y);
+          ctx.lineTo(pStart.x + hl * Math.cos(angle - Math.PI / 7), pStart.y + hl * Math.sin(angle - Math.PI / 7));
+          ctx.moveTo(pStart.x, pStart.y);
+          ctx.lineTo(pStart.x + hl * Math.cos(angle + Math.PI / 7), pStart.y + hl * Math.sin(angle + Math.PI / 7));
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+      return;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      const midX = (pts[i - 1].x + pts[i].x) / 2;
+      const midY = (pts[i - 1].y + pts[i].y) / 2;
+      ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, midX, midY);
+    }
+    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function renderStrokes() {
+    if (!drawCtx) return;
+    drawCtx.save();
+    drawCtx.setTransform(currentDPR, 0, 0, currentDPR, 0, 0);
+    drawCtx.clearRect(0, 0, W, H);
+    applyTransformToCtx(drawCtx);
+    for (let i = 0; i < strokes.length; i++) {
+      drawSingleStroke(drawCtx, strokes[i]);
+    }
+    drawCtx.restore();
   }
 
   function updateFormulaBadge() {
@@ -561,8 +764,10 @@ const Canvas = (() => {
     document.getElementById('fb-expr').textContent   = formula.expr;
     document.getElementById('fb-result').textContent = formula.result;
     const b  = Shapes.getBounds(selected);
-    const bx = Math.min(b.x + b.w + 12, W - 215);
-    const by = Math.max(Math.min(b.y - 10, H - 120), 10);
+    const sp = boardToScreen(b.x, b.y);
+    const screenW = b.w * zoomLevel;
+    const bx = Math.min(sp.x + screenW + 12, W - 215);
+    const by = Math.max(Math.min(sp.y - 10, H - 120), 10);
     badge.style.left = bx + 'px';
     badge.style.top  = by + 'px';
     badge?.classList.remove('hidden');
@@ -652,9 +857,10 @@ const Canvas = (() => {
     // Position toolbar right above box
     const zone = document.getElementById('canvas-zone');
     const zw = zone ? zone.offsetWidth : window.innerWidth;
-    let top = boxY - 48;
-    if (top < 10) top = boxY + boxH + 12;
-    let left = Math.max(12, Math.min(zw - 580, boxX));
+    const sp = boardToScreen(boxX, boxY);
+    let top = sp.y - 48;
+    if (top < 10) top = sp.y + (boxH * zoomLevel) + 12;
+    let left = Math.max(12, Math.min(zw - 580, sp.x));
     bar.style.top = top + 'px';
     bar.style.left = left + 'px';
   }
@@ -936,10 +1142,10 @@ const Canvas = (() => {
     try {
       const entry = {
         shapes: JSON.parse(JSON.stringify(shapes)),
-        drawDataUrl: getDrawDataUrl()
+        strokes: JSON.parse(JSON.stringify(strokes))
       };
       history.push(JSON.stringify(entry));
-      if (history.length > 60) history.shift();
+      if (history.length > 50) history.shift();
       redoStack = [];
     } catch (e) {
       console.error('saveHistory error', e);
@@ -954,18 +1160,14 @@ const Canvas = (() => {
         shapes = parsed;
       } else if (parsed && typeof parsed === 'object') {
         shapes = parsed.shapes || [];
-        drawCtx.clearRect(0, 0, W, H);
-        if (parsed.drawDataUrl) {
-          const img = new Image();
-          img.onload = () => drawCtx.drawImage(img, 0, 0);
-          img.src = parsed.drawDataUrl;
-        }
+        strokes = parsed.strokes || [];
       }
     } catch (e) {
       console.error('Failed to restore history', e);
     }
     selected = null;
     renderShapes();
+    renderStrokes();
     UI.updateStatus();
     UI.hidePropPanel();
   }
@@ -974,7 +1176,7 @@ const Canvas = (() => {
     if (!history.length) return;
     redoStack.push(JSON.stringify({
       shapes: JSON.parse(JSON.stringify(shapes)),
-      drawDataUrl: getDrawDataUrl()
+      strokes: JSON.parse(JSON.stringify(strokes))
     }));
     restoreHistoryEntry(history.pop());
   }
@@ -983,7 +1185,7 @@ const Canvas = (() => {
     if (!redoStack.length) return;
     history.push(JSON.stringify({
       shapes: JSON.parse(JSON.stringify(shapes)),
-      drawDataUrl: getDrawDataUrl()
+      strokes: JSON.parse(JSON.stringify(strokes))
     }));
     restoreHistoryEntry(redoStack.pop());
   }
@@ -1001,10 +1203,11 @@ const Canvas = (() => {
     saveHistory();
     const defW = def.w || (def.r ? def.r * 2 : null) || def.length || def.side || 100;
     const defH = def.h || (def.r ? def.r * 2 : null) || def.d2 || def.side || 80;
+    const center = screenToBoard(W / 2, H / 2);
     const s = {
       id: Date.now(), type,
-      x:  W/2 - defW/2,
-      y:  H/2 - defH/2,
+      x:  center.x - defW / 2,
+      y:  center.y - defH / 2,
       color: App.currentColor,
       ...JSON.parse(JSON.stringify(def))
     };
@@ -1205,16 +1408,24 @@ const Canvas = (() => {
 
   function clearAll() {
     saveHistory();
-    shapes = []; selected = null;
+    shapes = [];
+    strokes = [];
+    selected = null;
+    drawCtx.save();
+    drawCtx.setTransform(currentDPR, 0, 0, currentDPR, 0, 0);
     drawCtx.clearRect(0, 0, W, H);
-    renderShapes(); UI.updateStatus(); UI.hidePropPanel();
+    drawCtx.restore();
+    renderShapes();
+    renderStrokes();
+    UI.updateStatus();
+    UI.hidePropPanel();
   }
 
   // ─────────────────────────────────────────────
   // HIT TEST — SmartBoard touch target (24px padding)
   // ─────────────────────────────────────────────
   function hitTest(x, y, padding) {
-    const p = padding !== undefined ? padding : 24;
+    const p = (padding !== undefined ? padding : 24) / zoomLevel;
     for (let i = shapes.length-1; i >= 0; i--) {
       const b = Shapes.getBounds(shapes[i]);
       if (x >= b.x-p && x <= b.x+b.w+p && y >= b.y-p && y <= b.y+b.h+p)
@@ -1224,39 +1435,29 @@ const Canvas = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // POSITION HELPERS (Zoom & Pan Scale-Aware)
+  // POSITION HELPERS (Board Coordinate Mapping)
   // ─────────────────────────────────────────────
   function getPosFromEvent(e) {
-    const sc = document.getElementById('shape-canvas');
-    const r  = sc.getBoundingClientRect();
-    // Use logical (CSS) coordinates — DPR is handled by the canvas transform
-    const scaleX = W / r.width || 1;
-    const scaleY = H / r.height || 1;
-    return { x: (e.clientX - r.left) * scaleX, y: (e.clientY - r.top) * scaleY };
+    return getBoardPos(e);
   }
 
   function getPosFromTouch(touch) {
-    const sc = document.getElementById('shape-canvas');
-    const r  = sc.getBoundingClientRect();
-    // Use logical (CSS) coordinates — DPR is handled by the canvas transform
-    const scaleX = W / r.width || 1;
-    const scaleY = H / r.height || 1;
-    return { x: (touch.clientX - r.left) * scaleX, y: (touch.clientY - r.top) * scaleY };
+    return getBoardPos(touch);
   }
 
   // ─────────────────────────────────────────────
   // ZOOM & PAN LOGIC
   // ─────────────────────────────────────────────
   function applyZoomTransform() {
-    const vp = document.getElementById('canvas-viewport');
-    if (vp) {
-      vp.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
-    }
     const lbl = document.getElementById('zoom-percentage-label');
     if (lbl) {
       lbl.textContent = `${Math.round(zoomLevel * 100)}%`;
     }
     drawGrid();
+    renderShapes();
+    renderStrokes();
+    updateShapeDimensionBar(selected);
+    updateFloatingToolbar();
   }
 
   function setZoom(newZoom, originScreenX, originScreenY) {
@@ -1311,6 +1512,7 @@ const Canvas = (() => {
       panStart = { x: e.clientX - panX, y: e.clientY - panY };
       const zone = document.getElementById('canvas-zone');
       if (zone) zone.style.cursor = 'grabbing';
+      try { e.target.setPointerCapture(e.pointerId); } catch(err) {}
       return;
     }
     handleDown(getPosFromEvent(e));
@@ -1329,6 +1531,7 @@ const Canvas = (() => {
       isPanning = false;
       const zone = document.getElementById('canvas-zone');
       if (zone) zone.style.cursor = isSpaceDown ? 'grab' : '';
+      try { e.target.releasePointerCapture(e.pointerId); } catch(err) {}
       return;
     }
     handleUp(getPosFromEvent(e));
@@ -2061,31 +2264,44 @@ const Canvas = (() => {
       return null;
     } catch(e) { return null; }
   }
-  function loadPageState(savedShapes, savedDrawData, savedBgImage) {
+  function loadPageState(savedShapes, savedDrawData, savedBgImage, savedStrokes) {
     shapes = savedShapes ? JSON.parse(JSON.stringify(savedShapes)) : [];
-    selected = null; history = []; redoStack = [];
+    strokes = savedStrokes ? JSON.parse(JSON.stringify(savedStrokes)) : [];
+    selected = null;
+    history = [];
+    redoStack = [];
     setBgImage(savedBgImage || null);
-    drawCtx.clearRect(0, 0, W, H);
-    if (savedDrawData) {
-      // Support both raw ImageData (in-memory page switch) and base64 string (loaded from file)
+    renderShapes();
+    if (strokes && strokes.length > 0) {
+      renderStrokes();
+    } else if (savedDrawData) {
       if (typeof savedDrawData === 'string') {
         const img = new Image();
         img.onload = () => {
+          drawCtx.save();
+          drawCtx.setTransform(currentDPR, 0, 0, currentDPR, 0, 0);
+          drawCtx.clearRect(0, 0, W, H);
           drawCtx.drawImage(img, 0, 0, W, H);
+          drawCtx.restore();
         };
         img.src = savedDrawData;
       } else {
-        try { drawCtx.putImageData(savedDrawData, 0, 0); } catch(e){}
+        renderStrokes();
       }
+    } else {
+      renderStrokes();
     }
-    renderShapes();
   }
-  function getState()       { return { shapes, boardColorId: currentBoardColor.id, bgImage: currentBgImage }; }
+  function getState()       { return { shapes, strokes, boardColorId: currentBoardColor.id, bgImage: currentBgImage }; }
   function loadState(state) {
-    shapes = state.shapes || []; selected = null;
+    shapes = state.shapes || [];
+    strokes = state.strokes || [];
+    selected = null;
     if (state.boardColorId) setBoardColor(state.boardColorId);
     if (state.bgImage) setBgImage(state.bgImage);
-    renderShapes(); UI.updateStatus();
+    renderShapes();
+    renderStrokes();
+    UI.updateStatus();
   }
   function drawBaseGridOn(targetCtx, width, height) {
     targetCtx.fillStyle = currentBoardColor.bg;
@@ -2202,7 +2418,9 @@ const Canvas = (() => {
     updateProp, clearAll, undo, redo, saveHistory,
     getState, loadState, snapshot, snapshotJpeg,
     getShapeCount, getDrawCtx, getCanvasSize, getPosFromTouch, getPosFromEvent,
-    getShapes, getDrawData, getDrawDataUrl, loadPageState,
+    getBoardPos, getScreenPos, screenToBoard, boardToScreen, applyTransformToCtx, getDPR: () => currentDPR,
+    getShapes, getStrokes, setStrokes, addStroke, renderStrokes, eraseAtPoint,
+    getDrawData, getDrawDataUrl, loadPageState,
     adjustFontSize, editSelectedText, nudgeSelected, updateFloatingToolbar,
     setTextFontFamily, setTextFontSize, toggleTextBold, cycleTextAlign,
     toggleTextList, promptTextLink, setTextColor, toggleTextHighlight,
