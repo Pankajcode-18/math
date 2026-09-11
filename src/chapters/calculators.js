@@ -475,7 +475,7 @@ const SetsUI = (() => {
       const btn = document.createElement('button');
       btn.className = 'c-btn-sm';
       btn.textContent = o.label;
-      btn.style.cssText = 'text-align:left;padding:6px 8px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      btn.style.cssText = 'text-align:left;padding:4px 6px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;border-radius:4px;';
       btn.title = o.label;
       btn.addEventListener('click', () => compute(o.op));
       // Full-width for single-column ops

@@ -1467,11 +1467,124 @@ const UI = (() => {
   // ─────────────────────────────────────────────
   // CHAPTER PANEL (SLIDES DOWN FROM TOP)
   // ─────────────────────────────────────────────
+  let panelCompact = false;
+  let panelMinimized = false;
+  let panelAnnotate = false;
+  let panelDragSetup = false;
+
+  function togglePanelSize() {
+    const panel = document.getElementById('chapter-panel');
+    if (!panel) return;
+    panelCompact = !panelCompact;
+    panel.classList.toggle('compact', panelCompact);
+    const btn = document.getElementById('cp-btn-size');
+    if (btn) btn.textContent = panelCompact ? '⤡ Normal' : '⤢ Small';
+    if (typeof SetsUI !== 'undefined' && SetsUI.redrawVenn) {
+      setTimeout(SetsUI.redrawVenn, 100);
+    }
+  }
+
+  function togglePanelMinimize() {
+    const panel = document.getElementById('chapter-panel');
+    if (!panel) return;
+    panelMinimized = !panelMinimized;
+    panel.classList.toggle('minimized', panelMinimized);
+    const btn = document.getElementById('cp-btn-min');
+    if (btn) btn.textContent = panelMinimized ? '＋' : '−';
+  }
+
+  function togglePanelAnnotate() {
+    const panel = document.getElementById('chapter-panel');
+    if (!panel) return;
+    panelAnnotate = !panelAnnotate;
+    panel.classList.toggle('annotate-mode', panelAnnotate);
+    const drawCanvas = document.getElementById('draw-canvas');
+    if (drawCanvas) {
+      drawCanvas.style.zIndex = panelAnnotate ? '180' : '';
+    }
+    const btn = document.getElementById('cp-btn-annotate');
+    if (btn) {
+      btn.classList.toggle('active', panelAnnotate);
+      btn.textContent = panelAnnotate ? '👆 Interact' : '✎ Write Over';
+      btn.title = panelAnnotate ? 'Click to interact with inputs & buttons' : 'Write / Draw directly over this panel with stylus or pen';
+    }
+    if (panelAnnotate && typeof App !== 'undefined') {
+      if (App.currentTool === 'select' && App.setTool) {
+        App.setTool('pen');
+      }
+    }
+  }
+
+  function setupPanelDrag() {
+    if (panelDragSetup) return;
+    const panel = document.getElementById('chapter-panel');
+    const head = document.getElementById('cp-head');
+    if (!panel || !head) return;
+    panelDragSetup = true;
+
+    let isDragging = false;
+    let startX = 0, startY = 0;
+    let initialLeft = 0, initialTop = 0;
+
+    function onPointerDown(e) {
+      if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
+      isDragging = true;
+      try { head.setPointerCapture(e.pointerId); } catch(err) {}
+
+      const rect = panel.getBoundingClientRect();
+      panel.style.right = 'auto';
+      panel.style.left = rect.left + 'px';
+      panel.style.top = rect.top + 'px';
+      panel.style.transform = 'none';
+
+      startX = e.clientX;
+      startY = e.clientY;
+      initialLeft = rect.left;
+      initialTop = rect.top;
+      e.preventDefault();
+    }
+
+    function onPointerMove(e) {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      const zone = document.getElementById('canvas-zone') || document.body;
+      const maxLeft = Math.max(10, zone.clientWidth - panel.offsetWidth - 10);
+      const maxTop = Math.max(10, zone.clientHeight - panel.offsetHeight - 10);
+
+      const nextLeft = Math.min(Math.max(10, initialLeft + dx), maxLeft);
+      const nextTop = Math.min(Math.max(10, initialTop + dy), maxTop);
+
+      panel.style.left = nextLeft + 'px';
+      panel.style.top = nextTop + 'px';
+    }
+
+    function onPointerUp(e) {
+      if (isDragging) {
+        isDragging = false;
+        try { head.releasePointerCapture(e.pointerId); } catch(err) {}
+      }
+    }
+
+    head.addEventListener('pointerdown', onPointerDown);
+    head.addEventListener('pointermove', onPointerMove);
+    head.addEventListener('pointerup', onPointerUp);
+    head.addEventListener('pointercancel', onPointerUp);
+  }
+
   function toggleChapterPanel() {
     panelOpen = !panelOpen;
     const panel = document.getElementById('chapter-panel');
-    if (panel) panel.classList.toggle('open', panelOpen);
-    if (panelOpen) renderChapterPanel();
+    if (panel) {
+      panel.classList.toggle('open', panelOpen);
+      if (panelOpen) {
+        setupPanelDrag();
+        renderChapterPanel();
+      } else {
+        if (panelAnnotate) togglePanelAnnotate();
+      }
+    }
   }
 
   function openChapterPanel() {
@@ -1479,6 +1592,7 @@ const UI = (() => {
     const panel = document.getElementById('chapter-panel');
     if (panel) {
       panel.classList.add('open');
+      setupPanelDrag();
       renderChapterPanel();
     }
   }
@@ -1486,7 +1600,10 @@ const UI = (() => {
   function closeChapterPanel() {
     panelOpen = false;
     const panel = document.getElementById('chapter-panel');
-    if (panel) panel.classList.remove('open');
+    if (panel) {
+      panel.classList.remove('open');
+      if (panelAnnotate) togglePanelAnnotate();
+    }
   }
 
   function isChapterPanelOpen() {
@@ -1551,45 +1668,45 @@ const UI = (() => {
 
       // ── CH 1: SETS — Dynamic multi-set ──
       case 1: return `
-        <div style="display:grid;grid-template-columns:1.15fr 1fr;gap:14px;height:100%">
+        <div style="display:grid;grid-template-columns:1.05fr 0.95fr;gap:10px;height:100%">
 
           <!-- LEFT: Set inputs + operations -->
           <div class="calc-card" style="display:flex;flex-direction:column;gap:0;overflow:hidden">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
               <h4 style="margin:0">Sets</h4>
-              <div style="display:flex;gap:6px;align-items:center">
-                <button class="c-btn-sm" onclick="SetsUI.addSet()" style="padding:4px 10px;font-size:11px">＋ Add Set</button>
-                <button class="c-btn-sm" onclick="SetsUI.removeSet()" style="padding:4px 10px;font-size:11px;background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:#fca5a5">− Remove</button>
+              <div style="display:flex;gap:5px;align-items:center">
+                <button class="c-btn-sm" onclick="SetsUI.addSet()" style="padding:3px 8px;font-size:10.5px">＋ Add Set</button>
+                <button class="c-btn-sm" onclick="SetsUI.removeSet()" style="padding:3px 8px;font-size:10.5px;background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.3);color:#fca5a5">− Remove</button>
               </div>
             </div>
 
             <!-- Dynamic set inputs container -->
-            <div id="sets-inputs" style="display:flex;flex-direction:column;gap:7px;margin-bottom:10px;max-height:130px;overflow-y:auto"></div>
+            <div id="sets-inputs" style="display:flex;flex-direction:column;gap:5px;margin-bottom:8px;max-height:95px;overflow-y:auto"></div>
 
             <!-- n(U) -->
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-              <span style="font-size:11px;color:rgba(255,255,255,.5);white-space:nowrap">n(U) universal set:</span>
-              <input class="c-inp" id="set-U" type="number" placeholder="e.g. 50" style="width:80px;text-align:left">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+              <span style="font-size:10.5px;color:rgba(255,255,255,.5);white-space:nowrap">n(U) universal set:</span>
+              <input class="c-inp" id="set-U" type="number" placeholder="e.g. 50" style="width:72px;text-align:left;height:26px;font-size:11px">
             </div>
 
             <!-- Operation buttons — generated dynamically -->
-            <div id="sets-op-btns" style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px"></div>
+            <div id="sets-op-btns" style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
 
             <!-- Result -->
-            <div class="c-result" id="set-result" style="min-height:38px;font-size:12.5px">Enter values in sets above, then choose an operation.</div>
+            <div class="c-result" id="set-result" style="min-height:32px;font-size:11.5px;padding:6px 8px">Enter values in sets above, then choose an operation.</div>
 
             <!-- Solve space -->
-            <div style="margin-top:8px">
-              <div style="font-size:9px;color:rgba(255,255,255,.35);margin-bottom:3px;letter-spacing:.08em;text-transform:uppercase">Working / solve space</div>
-              <textarea id="sets-solve" style="width:100%;min-height:48px;max-height:80px;background:rgba(0,0,0,.28);border:1px solid rgba(201,168,76,.14);border-radius:6px;color:rgba(255,255,255,.82);font-family:'JetBrains Mono',monospace;font-size:12px;padding:6px 9px;resize:vertical;outline:none" placeholder="Write your steps here…"></textarea>
+            <div style="margin-top:6px">
+              <div style="font-size:8.5px;color:rgba(255,255,255,.35);margin-bottom:2px;letter-spacing:.08em;text-transform:uppercase">Working / solve space</div>
+              <textarea id="sets-solve" style="width:100%;min-height:36px;max-height:60px;background:rgba(0,0,0,.28);border:1px solid rgba(201,168,76,.14);border-radius:6px;color:rgba(255,255,255,.82);font-family:'JetBrains Mono',monospace;font-size:11px;padding:4px 7px;resize:vertical;outline:none" placeholder="Write your steps here…"></textarea>
             </div>
           </div>
 
           <!-- RIGHT: Venn diagram -->
-          <div class="calc-card" style="display:flex;flex-direction:column;align-items:center;gap:6px">
-            <h4 style="align-self:flex-start">Live Venn Diagram</h4>
-            <canvas id="venn-canvas" width="280" height="200" style="border-radius:7px;background:rgba(0,0,0,.22);max-width:100%"></canvas>
-            <div id="venn-counts" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,.5);text-align:center;line-height:1.9;align-self:flex-start"></div>
+          <div class="calc-card" style="display:flex;flex-direction:column;align-items:center;gap:5px">
+            <h4 style="align-self:flex-start;margin:0 0 6px">Live Venn Diagram</h4>
+            <canvas id="venn-canvas" width="240" height="170" style="border-radius:6px;background:rgba(0,0,0,.22);max-width:100%;height:auto"></canvas>
+            <div id="venn-counts" style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:rgba(255,255,255,.5);text-align:center;line-height:1.7;align-self:flex-start"></div>
           </div>
 
         </div>`;
@@ -1862,6 +1979,7 @@ const UI = (() => {
     toggleShapesSection,
     toggleDropdown, closeAllDropdowns,
     toggleChapterPanel, openChapterPanel, closeChapterPanel, isChapterPanelOpen, renderChapterPanel, renderScienceChapterPanel,
+    togglePanelSize, togglePanelMinimize, togglePanelAnnotate,
     updateStatus, rebuildForSubject,
     renderTopChapters, updateTopChapterBadge, toggleSubjectDropdown,
     togglePenFlyout, openPenFlyout, closePenFlyout,

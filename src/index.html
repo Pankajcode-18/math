@@ -549,12 +549,18 @@
     </div>
     <!-- Text editor injected dynamically by Drawing.placeText() -->
 
-    <!-- Chapter Tools — slides DOWN from top -->
+    <!-- Chapter Tools — Floating Hub -->
     <div id="chapter-panel">
-      <div class="cp-head">
+      <div class="cp-head" id="cp-head">
+        <span class="cp-drag-hint" title="Drag to move panel anywhere on smart board">⠿</span>
         <span class="cp-icon">⚡</span>
         <span id="cp-title">Chapter Tools</span>
-        <button class="cp-close" onclick="UI.toggleChapterPanel()">✕</button>
+        <div class="cp-actions">
+          <button class="cp-head-btn" id="cp-btn-annotate" onclick="UI.togglePanelAnnotate()" title="Write/Draw directly over this panel with stylus or pen">✎ Write Over</button>
+          <button class="cp-head-btn" id="cp-btn-size" onclick="UI.togglePanelSize()" title="Toggle compact / normal size">⤢ Small</button>
+          <button class="cp-head-btn" id="cp-btn-min" onclick="UI.togglePanelMinimize()" title="Minimize to floating pill">−</button>
+          <button class="cp-close" onclick="UI.toggleChapterPanel()" title="Close panel">✕</button>
+        </div>
       </div>
       <div id="cp-body"></div>
     </div>

@@ -520,9 +520,28 @@ const Drawing = (() => {
   function syncPointerEvents() {
     const tool     = (typeof App !== 'undefined') ? App.currentTool : 'pen';
     const dc       = getDrawCanvas();
+    const vp       = document.getElementById('canvas-viewport');
     if (!dc) return;
     const useDraw = (tool === 'pen' || tool === 'highlighter' || tool === 'eraser');
     dc.style.pointerEvents = useDraw ? 'auto' : 'none';
+    if (vp) {
+      vp.style.zIndex = useDraw ? '200' : '2';
+    }
+    dc.style.zIndex = useDraw ? '200' : '3';
+
+    // Synchronize Write Over button on chapter panel if open
+    const btnAnnotate = document.getElementById('cp-btn-annotate');
+    if (btnAnnotate) {
+      if (useDraw) {
+        btnAnnotate.classList.add('active');
+        btnAnnotate.textContent = '👆 Interact';
+        btnAnnotate.title = 'Switch to interacting with buttons & inputs';
+      } else {
+        btnAnnotate.classList.remove('active');
+        btnAnnotate.textContent = '✎ Write Over';
+        btnAnnotate.title = 'Write / Draw directly over this panel with stylus or pen';
+      }
+    }
   }
 
   function clearDrawings() {
