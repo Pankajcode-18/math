@@ -42,7 +42,7 @@ const StickyNotesTool = (() => {
       bg: th.bg,
       textColor: th.text,
       borderColor: th.border,
-      fontSize: 22,
+      fontSize: 16,
       fontFamily: '"Plus Jakarta Sans", "Segoe UI", sans-serif',
       bold: false,
       italic: false,
@@ -304,20 +304,24 @@ const StickyNotesTool = (() => {
     textarea.className = 'sticky-note-editor';
     textarea.value = note.text || '';
 
-    const pad = 16;
-    const topPad = 28;
+    const sp = (typeof Canvas !== 'undefined' && Canvas.boardToScreen)
+      ? Canvas.boardToScreen(note.x, note.y)
+      : { x: note.x, y: note.y };
+    const zoom = (typeof Canvas !== 'undefined' && Canvas.getZoom) ? Canvas.getZoom() : 1.0;
+    const pad = 16 * zoom;
+    const topPad = 28 * zoom;
 
     textarea.style.cssText = `
       position: absolute;
-      left: ${note.x + pad}px;
-      top: ${note.y + topPad}px;
-      width: ${note.w - pad * 2}px;
-      height: ${note.h - topPad - pad}px;
+      left: ${sp.x + pad}px;
+      top: ${sp.y + topPad}px;
+      width: ${note.w * zoom - pad * 2}px;
+      height: ${note.h * zoom - topPad - pad}px;
       padding: 4px;
       background: transparent;
       color: ${note.textColor || '#1c1917'};
       font-family: ${note.fontFamily || '"Plus Jakarta Sans", sans-serif'};
-      font-size: ${note.fontSize || 20}px;
+      font-size: ${(note.fontSize || 16) * zoom}px;
       font-weight: ${note.bold ? '700' : '500'};
       font-style: ${note.italic ? 'italic' : 'normal'};
       text-align: ${note.align || 'left'};
@@ -395,6 +399,8 @@ const StickyNotesTool = (() => {
     bar.id = 'sticky-floating-toolbar';
     bar.className = 'sticky-touch-toolbar';
 
+    const curFs = note.fontSize || 16;
+
     bar.innerHTML = `
       <!-- Color theme swatches -->
       <div class="snt-swatches">
@@ -406,17 +412,25 @@ const StickyNotesTool = (() => {
 
       <div class="snt-div"></div>
 
-      <!-- Typography -->
+      <!-- Typography & Font Size Stepper -->
       <div class="snt-group">
-        <button class="snt-btn" onclick="StickyNotesTool.adjustFontSize(-2)" title="Decrease font size">A−</button>
-        <button class="snt-btn" onclick="StickyNotesTool.adjustFontSize(2)" title="Increase font size">A＋</button>
-        <button class="snt-btn ${note.bold ? 'active' : ''}" onclick="StickyNotesTool.toggleBold()" title="Bold">
+        <button type="button" class="snt-btn" onclick="StickyNotesTool.adjustFontSize(-2)" title="Decrease font size">A−</button>
+        <span class="snt-size-badge" title="Current font size">${curFs}px</span>
+        <button type="button" class="snt-btn" onclick="StickyNotesTool.adjustFontSize(2)" title="Increase font size">A＋</button>
+
+        <div class="snt-size-presets">
+          <button type="button" class="snt-btn snt-btn-sm ${curFs <= 12 ? 'active' : ''}" onclick="StickyNotesTool.setFontSize(11)" title="Small text">Sm</button>
+          <button type="button" class="snt-btn snt-btn-sm ${curFs > 12 && curFs <= 18 ? 'active' : ''}" onclick="StickyNotesTool.setFontSize(16)" title="Normal text">Md</button>
+          <button type="button" class="snt-btn snt-btn-sm ${curFs > 18 ? 'active' : ''}" onclick="StickyNotesTool.setFontSize(22)" title="Large text">Lg</button>
+        </div>
+
+        <button type="button" class="snt-btn ${note.bold ? 'active' : ''}" onclick="StickyNotesTool.toggleBold()" title="Bold">
           <strong>B</strong>
         </button>
-        <button class="snt-btn ${note.italic ? 'active' : ''}" onclick="StickyNotesTool.toggleItalic()" title="Italic">
+        <button type="button" class="snt-btn ${note.italic ? 'active' : ''}" onclick="StickyNotesTool.toggleItalic()" title="Italic">
           <em>I</em>
         </button>
-        <button class="snt-btn" onclick="StickyNotesTool.cycleAlign()" title="Alignment">
+        <button type="button" class="snt-btn" onclick="StickyNotesTool.cycleAlign()" title="Alignment">
           <span>≡ ${note.align || 'left'}</span>
         </button>
       </div>
@@ -425,16 +439,16 @@ const StickyNotesTool = (() => {
 
       <!-- Object management -->
       <div class="snt-group">
-        <button class="snt-btn" onclick="StickyNotesTool.duplicateNote()" title="Duplicate Sticky Note">
+        <button type="button" class="snt-btn" onclick="StickyNotesTool.duplicateNote()" title="Duplicate Sticky Note">
           <span>📄 Duplicate</span>
         </button>
-        <button class="snt-btn" onclick="StickyNotesTool.bringToFront()" title="Bring to Front">
+        <button type="button" class="snt-btn" onclick="StickyNotesTool.bringToFront()" title="Bring to Front">
           <span>⬆ Front</span>
         </button>
-        <button class="snt-btn" onclick="StickyNotesTool.sendToBack()" title="Send to Back">
+        <button type="button" class="snt-btn" onclick="StickyNotesTool.sendToBack()" title="Send to Back">
           <span>⬇ Back</span>
         </button>
-        <button class="snt-btn snt-btn-danger" onclick="StickyNotesTool.deleteNote()" title="Delete Sticky Note">
+        <button type="button" class="snt-btn snt-btn-danger" onclick="StickyNotesTool.deleteNote()" title="Delete Sticky Note">
           <span>🗑 Delete</span>
         </button>
       </div>
@@ -444,13 +458,18 @@ const StickyNotesTool = (() => {
     if (!zone) return;
     zone.appendChild(bar);
 
-    const barW = bar.offsetWidth || 480;
-    const barH = bar.offsetHeight || 42;
+    const barW = bar.offsetWidth || 560;
+    const barH = bar.offsetHeight || 44;
 
-    let posX = note.x + note.w / 2 - barW / 2;
-    let posY = note.y - barH - 34;
+    const sp = (typeof Canvas !== 'undefined' && Canvas.boardToScreen)
+      ? Canvas.boardToScreen(note.x + note.w / 2, note.y)
+      : { x: note.x + note.w / 2, y: note.y };
+    const zoom = (typeof Canvas !== 'undefined' && Canvas.getZoom) ? Canvas.getZoom() : 1.0;
 
-    if (posY < 10) posY = note.y + note.h + 16;
+    let posX = sp.x - barW / 2;
+    let posY = sp.y - barH - 24;
+
+    if (posY < 10) posY = sp.y + (note.h * zoom) + 16;
     if (posX < 10) posX = 10;
     if (posX + barW > zone.offsetWidth - 10) posX = zone.offsetWidth - barW - 10;
 
@@ -482,8 +501,17 @@ const StickyNotesTool = (() => {
   function adjustFontSize(delta) {
     if (!activeNote) return;
     Canvas.saveHistory();
-    activeNote.fontSize = Math.max(12, Math.min(64, (activeNote.fontSize || 20) + delta));
+    activeNote.fontSize = Math.max(10, Math.min(64, (activeNote.fontSize || 16) + delta));
     Canvas.renderShapes();
+    showNoteContextToolbar(activeNote);
+  }
+
+  function setFontSize(size) {
+    if (!activeNote) return;
+    Canvas.saveHistory();
+    activeNote.fontSize = Math.max(10, Math.min(64, size));
+    Canvas.renderShapes();
+    showNoteContextToolbar(activeNote);
   }
 
   function toggleBold() {
@@ -581,6 +609,7 @@ const StickyNotesTool = (() => {
     getActiveNote: () => activeNote,
     setNoteTheme,
     adjustFontSize,
+    setFontSize,
     toggleBold,
     toggleItalic,
     cycleAlign,

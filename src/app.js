@@ -80,6 +80,15 @@ const App = (() => {
     // Update topbar subject badge
     const badge = document.getElementById('active-subject-badge');
     if (badge) badge.textContent = activeSubject === 'science' ? '🔬 Science' : '📐 Mathematics';
+
+    initBrightness();
+    document.addEventListener('click', (e) => {
+      const bCtrl = document.getElementById('board-brightness-control');
+      if (bCtrl && !bCtrl.contains(e.target)) {
+        const dd = document.getElementById('brightness-dropdown');
+        if (dd) dd.classList.add('hidden');
+      }
+    });
   }
 
 
@@ -741,6 +750,54 @@ const App = (() => {
   }
 
   // ─────────────────────────────────────────────
+  // ENTIRE BOARD BRIGHTNESS CONTROL
+  // ─────────────────────────────────────────────
+  let boardBrightness = 100;
+
+  function initBrightness() {
+    try {
+      const saved = localStorage.getItem('mbp_board_brightness');
+      if (saved) {
+        setBoardBrightness(parseInt(saved), false);
+      }
+    } catch(e) {}
+  }
+
+  function setBoardBrightness(val, save = true) {
+    boardBrightness = Math.max(30, Math.min(100, parseInt(val) || 100));
+    if (save) {
+      try { localStorage.setItem('mbp_board_brightness', boardBrightness); } catch(e) {}
+    }
+
+    const overlay = document.getElementById('board-brightness-overlay');
+    if (overlay) {
+      const opacity = ((100 - boardBrightness) / 100) * 0.72;
+      overlay.style.opacity = opacity.toFixed(2);
+    }
+
+    const lbl = document.getElementById('brightness-val-label');
+    if (lbl) lbl.textContent = `${boardBrightness}%`;
+
+    const pctText = document.getElementById('bdm-pct-text');
+    if (pctText) pctText.textContent = `${boardBrightness}%`;
+
+    const slider = document.getElementById('board-brightness-slider');
+    if (slider) slider.value = boardBrightness;
+
+    document.querySelectorAll('.bdm-preset-btn').forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.b) === boardBrightness);
+    });
+  }
+
+  function toggleBrightnessMenu(e) {
+    if (e) e.stopPropagation();
+    const dd = document.getElementById('brightness-dropdown');
+    if (dd) {
+      dd.classList.toggle('hidden');
+    }
+  }
+
+  // ─────────────────────────────────────────────
   // PUBLIC
   // ─────────────────────────────────────────────
   return {
@@ -768,6 +825,9 @@ const App = (() => {
     setEraserSize: (v) => { eraserSize = v; },
     get activeChapter(){ return activeChapter; },
     get activeSubject(){ return activeSubject; },
+    setBoardBrightness,
+    toggleBrightnessMenu,
+    getBoardBrightness: () => boardBrightness
   };
 
 })();

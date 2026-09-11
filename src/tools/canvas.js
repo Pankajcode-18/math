@@ -1216,6 +1216,7 @@ const Canvas = (() => {
     selectShape(s);
     renderShapes();
     UI.updateStatus();
+    if (typeof App !== 'undefined' && App.setTool) App.setTool('select');
   }
 
   function addShapeObject(s) {
@@ -1278,6 +1279,7 @@ const Canvas = (() => {
     UI.updateStatus();
     UI.hidePropPanel();
     updateFloatingToolbar();
+    updateShapeDimensionBar(null);
     document.getElementById('formula-badge')?.classList.add('hidden');
   }
 
@@ -1298,30 +1300,41 @@ const Canvas = (() => {
     }
 
     const b = (typeof Shapes !== 'undefined' && Shapes.getBounds) ? Shapes.getBounds(s) : { x: s.x, y: s.y, w: s.w || 100, h: s.h || 100 };
-    const screenX = b.x * zoomLevel + panX;
-    const screenY = b.y * zoomLevel + panY;
-    const screenW = b.w * zoomLevel;
+    const sp = boardToScreen(b.x + b.w / 2, b.y);
 
-    bar.style.left = `${Math.max(10, screenX + screenW / 2)}px`;
-    bar.style.top = `${Math.max(10, screenY - 38)}px`;
+    let top = sp.y - 50;
+    if (top < 10) top = sp.y + (b.h * zoomLevel) + 16;
+    bar.style.left = `${Math.max(10, sp.x)}px`;
+    bar.style.top = `${Math.max(10, top)}px`;
     bar.classList.remove('hidden');
     bar.innerHTML = '';
 
     if (s.type === 'graph') {
       const btn = document.createElement('button');
+      btn.type = 'button';
       btn.className = 'sdb-chip sdb-chip-graph';
-      btn.innerHTML = '📈 Edit Equations ✎';
+      btn.innerHTML = '📈 Edit Equations';
       btn.onclick = (e) => {
         e.stopPropagation();
         if (typeof GraphObject !== 'undefined') GraphObject.openEditor(s);
       };
       bar.appendChild(btn);
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'sdb-delete-btn';
+      delBtn.innerHTML = '<span>🗑️ Delete</span>';
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        deleteShape();
+      };
+      bar.appendChild(delBtn);
       return;
     }
 
     const dims = [];
-    if (s.w !== undefined) dims.push({ prop: 'w', label: 'W', val: Math.round(s.w) });
-    if (s.h !== undefined) dims.push({ prop: 'h', label: 'H', val: Math.round(s.h) });
+    if (s.w !== undefined) dims.push({ prop: 'w', label: 'Width', val: Math.round(s.w) });
+    if (s.h !== undefined && s.type !== 'square') dims.push({ prop: 'h', label: 'Height', val: Math.round(s.h) });
     if (s.r !== undefined) dims.push({ prop: 'r', label: 'Radius', val: Math.round(s.r) });
     if (s.side !== undefined) dims.push({ prop: 'side', label: 'Side', val: Math.round(s.side) });
     if (s.base !== undefined) dims.push({ prop: 'base', label: 'Base', val: Math.round(s.base) });
@@ -1330,29 +1343,94 @@ const Canvas = (() => {
     if (s.d2 !== undefined) dims.push({ prop: 'd2', label: 'd₂', val: Math.round(s.d2) });
 
     dims.forEach(d => {
-      const chip = document.createElement('button');
-      chip.className = 'sdb-chip';
-      chip.innerHTML = `<span>${d.label}:</span> <b>${d.val}px</b> <span class="sdb-pen">✎</span>`;
-      chip.title = `Click to edit ${d.label} dimension`;
-      chip.onclick = (e) => {
+      const group = document.createElement('div');
+      group.className = 'sdb-dim-group';
+
+      const lbl = document.createElement('span');
+      lbl.className = 'sdb-dim-label';
+      lbl.textContent = d.label;
+      group.appendChild(lbl);
+
+      const minusBtn = document.createElement('button');
+      minusBtn.type = 'button';
+      minusBtn.className = 'sdb-step-btn';
+      minusBtn.textContent = '−';
+      minusBtn.title = `Decrease ${d.label}`;
+      minusBtn.onclick = (e) => {
         e.stopPropagation();
-        const newVal = prompt(`Edit ${d.label} (pixels):`, d.val);
-        if (newVal !== null) {
-          const num = parseFloat(newVal);
-          if (!isNaN(num) && num > 5) {
-            s[d.prop] = num;
-            if (s.type === 'square' || s.type === 'circle') {
-              if (d.prop === 'w') s.h = num;
-              if (d.prop === 'h') s.w = num;
-            }
-            renderShapes();
-            saveHistory();
-            updateShapeDimensionBar(s);
-          }
+        const cur = Math.round(s[d.prop]);
+        const newVal = Math.max(10, cur - 10);
+        s[d.prop] = newVal;
+        if (s.type === 'square') { s.w = newVal; s.h = newVal; }
+        if (s.type === 'circle') { s.r = newVal; }
+        renderShapes();
+        saveHistory();
+        updateShapeDimensionBar(s);
+      };
+      group.appendChild(minusBtn);
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'sdb-num-input';
+      input.value = d.val;
+      input.min = '5';
+      input.max = '4000';
+      input.step = '5';
+      input.onchange = (e) => {
+        const num = parseFloat(input.value);
+        if (!isNaN(num) && num >= 5) {
+          s[d.prop] = num;
+          if (s.type === 'square') { s.w = num; s.h = num; }
+          if (s.type === 'circle') { s.r = num; }
+          renderShapes();
+          saveHistory();
+          updateShapeDimensionBar(s);
         }
       };
-      bar.appendChild(chip);
+      input.onclick = (e) => e.stopPropagation();
+      input.onkeydown = (e) => e.stopPropagation();
+      group.appendChild(input);
+
+      const unit = document.createElement('span');
+      unit.className = 'sdb-unit';
+      unit.textContent = 'px';
+      group.appendChild(unit);
+
+      const plusBtn = document.createElement('button');
+      plusBtn.type = 'button';
+      plusBtn.className = 'sdb-step-btn';
+      plusBtn.textContent = '＋';
+      plusBtn.title = `Increase ${d.label}`;
+      plusBtn.onclick = (e) => {
+        e.stopPropagation();
+        const cur = Math.round(s[d.prop]);
+        const newVal = Math.max(10, cur + 10);
+        s[d.prop] = newVal;
+        if (s.type === 'square') { s.w = newVal; s.h = newVal; }
+        if (s.type === 'circle') { s.r = newVal; }
+        renderShapes();
+        saveHistory();
+        updateShapeDimensionBar(s);
+      };
+      group.appendChild(plusBtn);
+
+      bar.appendChild(group);
     });
+
+    const divider = document.createElement('div');
+    divider.className = 'sdb-divider';
+    bar.appendChild(divider);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'sdb-delete-btn';
+    deleteBtn.innerHTML = '<span>🗑️ Delete</span>';
+    deleteBtn.title = 'Delete Shape';
+    deleteBtn.onclick = (e) => {
+      e.stopPropagation();
+      deleteShape();
+    };
+    bar.appendChild(deleteBtn);
   }
 
   function selectShape(s) {
@@ -2122,6 +2200,7 @@ const Canvas = (() => {
       }
       renderShapes();
       updateFloatingToolbar();
+      updateShapeDimensionBar(selected);
       return;
     }
 
@@ -2148,6 +2227,7 @@ const Canvas = (() => {
 
       renderShapes();
       updateFloatingToolbar();
+      updateShapeDimensionBar(dragging);
       if (dragging.type === 'table' && typeof TableTool !== 'undefined') {
         TableTool.showTableContextToolbar(dragging);
       } else if (dragging.type === 'stickyNote' && typeof StickyNotesTool !== 'undefined') {
@@ -2236,12 +2316,14 @@ const Canvas = (() => {
       resizing = null;
       UI.showPropPanel(selected);
       updateFloatingToolbar();
+      updateShapeDimensionBar(selected);
     }
     if (dragging) {
       saveHistory();
       dragging = null;
       UI.showPropPanel(selected);
       updateFloatingToolbar();
+      updateShapeDimensionBar(selected);
     }
     if (lineStart) {
       Drawing.commitLine(lineStart, pos, App.currentTool);

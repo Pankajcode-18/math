@@ -99,7 +99,7 @@ const Shapes = (() => {
 
     ctx.save();
     ctx.strokeStyle = s.color;
-    ctx.fillStyle   = s.color + '22';
+    ctx.fillStyle   = s.fill ? s.fill : 'transparent';
     ctx.lineWidth   = s.selected ? 2.5 : 2;
     ctx.setLineDash([]);
     ctx.lineJoin = 'round';
@@ -342,7 +342,7 @@ const Shapes = (() => {
 
       case 'hollowCylinder': {
         const hcx = s.x + s.R, ey = s.R * 0.22;
-        ctx.fillStyle = s.color + '22';
+        ctx.fillStyle = s.fill || 'transparent';
         ctx.beginPath(); ctx.ellipse(hcx, s.y + ey, s.R, ey, 0, 0, PI*2); ctx.fill(); ctx.stroke();
         ctx.beginPath(); ctx.ellipse(hcx, s.y + s.h, s.R, ey, 0, 0, PI*2); ctx.fill(); ctx.stroke();
         ctx.beginPath();
@@ -364,7 +364,7 @@ const Shapes = (() => {
         ctx.beginPath(); ctx.arc(hsx, hsy, s.r, PI, 0); ctx.closePath();
         ctx.fill(); ctx.stroke();
         ctx.beginPath(); ctx.ellipse(hsx, hsy, s.r, s.r * 0.25, 0, 0, PI*2);
-        ctx.fillStyle = s.color + '33'; ctx.fill(); ctx.stroke();
+        if (s.fill) { ctx.fillStyle = s.fill; ctx.fill(); } ctx.stroke();
         helperLine(ctx, hsx, hsy, hsx + s.r, hsy);
         dimLabel(ctx, hsx + s.r/2, hsy - 12, `r = ${(s.r*SCALE).toFixed(1)} cm`, s.color);
         if (s.selected) selectionHandles(ctx, s.x, s.y, s.r*2, s.r);
@@ -373,12 +373,12 @@ const Shapes = (() => {
 
       case 'rectPrism': {
         const dz = s.depth * 0.38;
-        ctx.fillStyle = s.color + '22'; ctx.strokeStyle = s.color; ctx.lineWidth = 1.8;
+        ctx.fillStyle = s.fill || 'transparent'; ctx.strokeStyle = s.color; ctx.lineWidth = 1.8;
         ctx.beginPath(); ctx.rect(s.x, s.y + dz, s.w, s.h); ctx.fill(); ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(s.x, s.y + dz); ctx.lineTo(s.x + dz, s.y);
         ctx.lineTo(s.x + s.w + dz, s.y); ctx.lineTo(s.x + s.w, s.y + dz);
-        ctx.closePath(); ctx.fillStyle = s.color + '15'; ctx.fill(); ctx.stroke();
+        ctx.closePath(); if (s.fill) { ctx.fillStyle = s.fill; ctx.fill(); } ctx.stroke();
         ctx.beginPath();
         ctx.moveTo(s.x + s.w, s.y + dz); ctx.lineTo(s.x + s.w + dz, s.y);
         ctx.lineTo(s.x + s.w + dz, s.y + s.h); ctx.lineTo(s.x + s.w, s.y + s.h + dz);
@@ -399,7 +399,7 @@ const Shapes = (() => {
           const a = (i * 2 * PI / ns) - PI/2;
           pts2.push({ x: pcx + s.r * Math.cos(a), y: pcy + s.r * Math.sin(a) });
         }
-        ctx.fillStyle = s.color + '22'; ctx.strokeStyle = s.color; ctx.lineWidth = 1.8;
+        ctx.fillStyle = s.fill || 'transparent'; ctx.strokeStyle = s.color; ctx.lineWidth = 1.8;
         ctx.beginPath();
         pts2.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
         ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -441,7 +441,7 @@ const Shapes = (() => {
         const brd = { x: s.x + s.base*1.2, y: s.y + s.h - s.base*0.15 };
         const bld = { x: s.x + s.base*0.2, y: s.y + s.h - s.base*0.15 };
         ctx.beginPath(); ctx.moveTo(apex.x,apex.y); ctx.lineTo(bl.x,bl.y); ctx.lineTo(br.x,br.y); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = s.color + '18';
+        ctx.fillStyle = s.fill || 'transparent';
         ctx.beginPath(); ctx.moveTo(apex.x,apex.y); ctx.lineTo(br.x,br.y); ctx.lineTo(brd.x,brd.y); ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.save(); ctx.setLineDash([5,4]); ctx.lineWidth = 1.2; ctx.strokeStyle = s.color + 'aa';
         ctx.beginPath(); ctx.moveTo(bl.x,bl.y); ctx.lineTo(bld.x,bld.y); ctx.lineTo(brd.x,brd.y); ctx.stroke();
@@ -639,7 +639,7 @@ const Shapes = (() => {
         // Bottom ellipse
         ctx.beginPath();
         ctx.ellipse(cx, s.y + s.h, s.r, ey, 0, 0, PI*2);
-        ctx.fillStyle = s.color + '33'; ctx.fill();
+        if (s.fill) { ctx.fillStyle = s.fill; ctx.fill(); }
         ctx.strokeStyle = s.color; ctx.stroke();
         // Top ellipse
         ctx.beginPath();
@@ -668,7 +668,7 @@ const Shapes = (() => {
         // Base ellipse
         ctx.beginPath();
         ctx.ellipse(ccx, s.y + s.h, s.r, ey2, 0, 0, PI*2);
-        ctx.fillStyle = s.color + '44'; ctx.fill();
+        if (s.fill) { ctx.fillStyle = s.fill; ctx.fill(); }
         ctx.strokeStyle = s.color; ctx.stroke();
         helperLine(ctx, ccx, s.y, ccx, s.y + s.h);
         dimLabel(ctx, ccx + s.r/2, s.y + s.h + 18,

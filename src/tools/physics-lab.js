@@ -518,10 +518,10 @@ const PhysicsLab = (() => {
         <div style="width:1px;height:28px;background:rgba(255,255,255,0.1);margin:0 4px;"></div>
 
         <!-- SIMULATION SELECTOR PILLS -->
-        <div id="phys-sim-pills" style="display:flex;gap:6px;overflow-x:auto;padding:2px 4px;flex:1;"></div>
+        <div id="phys-sim-pills" style="display:flex;align-items:center;gap:6px;padding:2px 4px;flex-shrink:0;white-space:nowrap;"></div>
 
         <!-- PLAYBACK CONTROLS -->
-        <div style="display:flex;align-items:center;gap:6px;background:rgba(15,23,42,0.7);padding:4px 8px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);box-shadow:inset 0 1px 2px rgba(0,0,0,0.3);">
+        <div style="display:flex;align-items:center;gap:6px;background:rgba(15,23,42,0.7);padding:4px 8px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);box-shadow:inset 0 1px 2px rgba(0,0,0,0.3);flex-shrink:0;white-space:nowrap;">
           <button id="phys-btn-play" class="phys-header-btn" style="background:rgba(16,185,129,0.18);border:1px solid rgba(16,185,129,0.45);color:#6ee7b7;box-shadow:0 0 10px rgba(16,185,129,0.2);" title="Play / Pause Simulation">
             <span>⏸</span> Pause
           </button>
@@ -687,13 +687,15 @@ const PhysicsLab = (() => {
         -webkit-appearance: none;
         appearance: none;
         width: 100%;
-        height: 5px;
-        background: rgba(255, 255, 255, 0.12);
+        height: 5px !important;
+        min-height: 0 !important;
+        background: rgba(255, 255, 255, 0.15);
         border-radius: 5px;
         outline: none;
         cursor: pointer;
         touch-action: manipulation;
         transition: background 0.15s ease;
+        margin: 6px 0;
       }
       .phys-slider::-webkit-slider-thumb {
         -webkit-appearance: none;
@@ -854,20 +856,21 @@ const PhysicsLab = (() => {
         color: #fde047;
       }
 
-      /* Top Header Buttons & Badges */
       .phys-sim-badge {
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        padding: 6px 14px;
+        padding: 5px 12px;
         border-radius: 12px;
         background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(129, 140, 248, 0.1));
         border: 1.5px solid rgba(56, 189, 248, 0.4);
         color: #f8fafc;
         font-weight: 700;
-        font-size: 13px;
+        font-size: 12.5px;
         box-shadow: 0 0 16px rgba(56, 189, 248, 0.2);
         letter-spacing: 0.01em;
+        white-space: nowrap;
+        flex-shrink: 0;
       }
       .phys-header-btn {
         display: inline-flex;
@@ -878,6 +881,8 @@ const PhysicsLab = (() => {
         font-size: 11.5px;
         font-weight: 700;
         cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
         transition: all 0.14s ease;
         touch-action: manipulation;
       }

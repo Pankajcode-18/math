@@ -75,6 +75,32 @@
     <div class="board-swatch-wrap" id="board-swatches"></div>
   </div>
 
+  <div class="tb-div"></div>
+
+  <!-- Board Brightness Control -->
+  <div class="tb-dropdown board-brightness-control" id="board-brightness-control">
+    <button type="button" class="tb-btn brightness-btn" id="btn-brightness" onclick="App.toggleBrightnessMenu(event)" title="Adjust Entire Board Brightness (Dimmer)">
+      <span class="brightness-icon">☀️</span>
+      <span class="brightness-label" id="brightness-val-label">100%</span>
+    </button>
+    <div class="tb-dropdown-menu brightness-dropdown-menu hidden" id="brightness-dropdown">
+      <div class="bdm-header">
+        <span class="bdm-title">Board Brightness</span>
+        <span class="bdm-pct" id="bdm-pct-text">100%</span>
+      </div>
+      <div class="bdm-slider-row">
+        <span class="bdm-icon-dim">🔅</span>
+        <input type="range" id="board-brightness-slider" min="30" max="100" step="5" value="100" oninput="App.setBoardBrightness(this.value)">
+        <span class="bdm-icon-bright">☀️</span>
+      </div>
+      <div class="bdm-presets">
+        <button type="button" class="bdm-preset-btn active" data-b="100" onclick="App.setBoardBrightness(100)">100% Day</button>
+        <button type="button" class="bdm-preset-btn" data-b="85" onclick="App.setBoardBrightness(85)">85% Room</button>
+        <button type="button" class="bdm-preset-btn" data-b="65" onclick="App.setBoardBrightness(65)">65% Dim</button>
+      </div>
+    </div>
+  </div>
+
   <div class="spacer"></div>
 
   <!-- PRIMARY TEACHING TOOLS (Surfaced Outside Dropdown for 1-Click Access) -->
@@ -2626,5 +2652,7 @@ const Library = (() => {
 window.Library = Library;
 
 </script>
+<!-- Entire Board Brightness Dimmer Overlay -->
+<div id="board-brightness-overlay" style="position:fixed;inset:0;background:black;opacity:0;pointer-events:none;z-index:99990;transition:opacity 0.15s ease;"></div>
 </body>
 </html>

@@ -1247,20 +1247,38 @@ const TableTool = (() => {
       rowsLbl.textContent = curRows;
       colsLbl.textContent = curCols;
 
-      const cells = matrix.querySelectorAll('.tmc-cell');
+      const cells = matrix.querySelectorAll('.tmc-grid-cell, .tmc-cell');
       cells.forEach(el => {
         const er = parseInt(el.dataset.r);
         const ec = parseInt(el.dataset.c);
-        el.classList.toggle('active', er <= curRows && ec <= curCols);
+        const on = er <= curRows && ec <= curCols;
+        el.classList.toggle('active', on);
+        el.classList.toggle('highlighted', on);
       });
     }
+
+    let isGridPointerDown = false;
+    matrix.addEventListener('pointerdown', (e) => {
+      isGridPointerDown = true;
+      try { matrix.setPointerCapture(e.pointerId); } catch(err) {}
+    });
+    window.addEventListener('pointerup', () => { isGridPointerDown = false; });
+    matrix.addEventListener('pointermove', (e) => {
+      if (!isGridPointerDown) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (el && el.dataset && el.dataset.r && el.dataset.c) {
+        updateSelection(parseInt(el.dataset.r), parseInt(el.dataset.c));
+      }
+    });
 
     for (let r = 1; r <= 6; r++) {
       for (let c = 1; c <= 6; c++) {
         const cell = document.createElement('div');
-        cell.className = 'tmc-cell' + (r <= curRows && c <= curCols ? ' active' : '');
+        const on = r <= curRows && c <= curCols;
+        cell.className = 'tmc-grid-cell' + (on ? ' active highlighted' : '');
         cell.dataset.r = r;
         cell.dataset.c = c;
+        cell.addEventListener('pointerenter', () => { if (isGridPointerDown) updateSelection(r, c); });
         cell.addEventListener('mouseenter', () => updateSelection(r, c));
         cell.addEventListener('click', () => updateSelection(r, c));
         matrix.appendChild(cell);
