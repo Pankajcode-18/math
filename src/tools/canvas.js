@@ -6,18 +6,55 @@
 
 const Canvas = (() => {
 
-  const BOARD_COLORS = [
-    { id:'green', bg:'#0e2419', line:'rgba(255,255,255,0.075)', major:'rgba(255,255,255,0.15)' },
-    { id:'black', bg:'#0b0d13', line:'rgba(255,255,255,0.07)',  major:'rgba(255,255,255,0.14)' },
-    { id:'navy',  bg:'#0a1224', line:'rgba(148,163,184,0.08)', major:'rgba(148,163,184,0.16)' },
-    { id:'white', bg:'#ffffff', line:'rgba(15,23,42,0.07)',    major:'rgba(15,23,42,0.13)'    },
+  const BOARD_BACKGROUNDS = [
+    // 1. Classic & Plain
+    { id: 'green',          category: 'plain',   label: 'Chalkboard Green',    bg: '#0e2419', pattern: 'grid', line: 'rgba(255,255,255,0.075)', major: 'rgba(255,255,255,0.15)' },
+    { id: 'black',          category: 'plain',   label: 'Blackboard Deep',     bg: '#0b0d13', pattern: 'grid', line: 'rgba(255,255,255,0.07)',  major: 'rgba(255,255,255,0.14)' },
+    { id: 'navy',           category: 'plain',   label: 'Cosmic Navy',         bg: '#0a1224', pattern: 'grid', line: 'rgba(148,163,184,0.08)', major: 'rgba(148,163,184,0.16)' },
+    { id: 'white',          category: 'plain',   label: 'Whiteboard Crisp',    bg: '#ffffff', pattern: 'grid', line: 'rgba(15,23,42,0.07)',    major: 'rgba(15,23,42,0.14)'    },
+    { id: 'plain-green',    category: 'plain',   label: 'Chalkboard Plain',    bg: '#0e2419', pattern: 'none' },
+    { id: 'plain-black',    category: 'plain',   label: 'Deep Obsidian Plain', bg: '#080a0f', pattern: 'none' },
+    { id: 'plain-white',    category: 'plain',   label: 'Studio White Plain',  bg: '#ffffff', pattern: 'none' },
+    { id: 'plain-cream',    category: 'plain',   label: 'Warm Ivory Sepia',    bg: '#fdfaf2', pattern: 'none' },
+    { id: 'plain-charcoal', category: 'plain',   label: 'Studio Charcoal',     bg: '#181e29', pattern: 'none' },
+
+    // 2. Math & Geometry
+    { id: 'math-axes',      category: 'math',    label: 'Coordinate Axes Grid',bg: '#0a1224', pattern: 'axes', line: 'rgba(148,163,184,0.08)', major: 'rgba(234,179,8,0.55)' },
+    { id: 'math-isometric', category: 'math',    label: 'Isometric 3D Grid',   bg: '#0c162c', pattern: 'isometric', line: 'rgba(148,163,184,0.13)' },
+    { id: 'math-polar',     category: 'math',    label: 'Polar Coordinates',  bg: '#0a1224', pattern: 'polar', line: 'rgba(148,163,184,0.13)', major: 'rgba(234,179,8,0.45)' },
+
+    // 3. Writing & Languages
+    { id: 'ruled-white',    category: 'writing', label: 'Notebook Ruled',      bg: '#ffffff', pattern: 'ruled', line: 'rgba(59,130,246,0.24)', margin: 'rgba(239,68,68,0.45)', step: 34 },
+    { id: 'ruled-cream',    category: 'writing', label: 'Vintage Ruled Ivory', bg: '#fbf7ee', pattern: 'ruled', line: 'rgba(120,80,40,0.20)', margin: 'rgba(200,60,60,0.40)', step: 36 },
+    { id: 'ruled-green',    category: 'writing', label: 'Chalkboard Ruled',    bg: '#0e2419', pattern: 'ruled', line: 'rgba(255,255,255,0.16)', margin: 'rgba(234,179,8,0.45)', step: 38 },
+    { id: 'ruled-wide',     category: 'writing', label: 'Wide Ruled Elementary',bg: '#ffffff', pattern: 'ruled', line: 'rgba(59,130,246,0.22)', margin: 'rgba(239,68,68,0.40)', step: 52 },
+    { id: 'ruled-fourline', category: 'writing', label: '4-Line English Guide',bg: '#ffffff', pattern: 'fourline', line: 'rgba(59,130,246,0.30)', midLine: 'rgba(239,68,68,0.35)', step: 48 },
+
+    // 4. Science & Engineering
+    { id: 'sci-blueprint',   category: 'science', label: 'Engineering Blueprint', bg: '#092542', pattern: 'grid', line: 'rgba(56,189,248,0.14)', major: 'rgba(56,189,248,0.32)' },
+    { id: 'sci-lab-grid',    category: 'science', label: 'Laboratory Millimeter',  bg: '#111827', pattern: 'grid', line: 'rgba(52,211,153,0.11)', major: 'rgba(52,211,153,0.26)', step: 18 },
+    { id: 'sci-dark-matrix', category: 'science', label: 'Quantum Matrix Grid',    bg: '#05181e', pattern: 'grid', line: 'rgba(6,182,212,0.12)',  major: 'rgba(6,182,212,0.28)' },
+
+    // 5. Modern & Dots
+    { id: 'mod-dot-dark',     category: 'modern', label: 'Dark Dot Matrix',        bg: '#0b0f19', pattern: 'dots', dotColor: 'rgba(255,255,255,0.28)', step: 30 },
+    { id: 'mod-dot-light',    category: 'modern', label: 'Light Dot Matrix',       bg: '#f8fafc', pattern: 'dots', dotColor: 'rgba(15,23,42,0.26)',    step: 30 },
+    { id: 'mod-soft-grey',    category: 'modern', label: 'Architect Soft Grey',    bg: '#f1f5f9', pattern: 'grid', line: 'rgba(15,23,42,0.06)',        major: 'rgba(15,23,42,0.13)' },
+    { id: 'mod-presentation', category: 'modern', label: 'Executive Slate',        bg: '#1e293b', pattern: 'none' }
   ];
-  let currentBoardColor = BOARD_COLORS[0];
+  const BOARD_COLORS = BOARD_BACKGROUNDS.slice(0, 4);
+  let currentBoardColor = BOARD_BACKGROUNDS[0];
   let currentBgImage = null; // dataURL or null
   let bgImageObj = null;
 
   let gridCtx, shapeCtx, drawCtx;
   let W = 0, H = 0;
+  let currentDPR = 1; // devicePixelRatio — updated on resize
+
+  // Returns true if the current tool should block two-finger zoom/pan
+  function toolBlocksTwoFinger() {
+    const tool = (typeof App !== 'undefined') ? App.currentTool : '';
+    return tool === 'pen' || tool === 'highlighter' || tool === 'eraser';
+  }
 
   let shapes    = [];
   let history   = [];
@@ -117,29 +154,42 @@ const Canvas = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // RESIZE
+  // RESIZE — DPR-aware for sharp rendering on 4K/SmartBoard
   // ─────────────────────────────────────────────
   function resize() {
     const zone = document.getElementById('canvas-zone');
     if (!zone) return;
     W = zone.offsetWidth;
     H = zone.offsetHeight;
+    currentDPR = window.devicePixelRatio || 1;
 
-    // Grid canvas always covers the full zone screen
-    const gc = document.getElementById('grid-canvas');
-    if (gc) {
-      gc.width = W;
-      gc.height = H;
+    // Helper: set canvas buffer size to DPR-scaled, CSS size to logical
+    function applyDPR(canvasEl) {
+      if (!canvasEl) return;
+      canvasEl.width = Math.round(W * currentDPR);
+      canvasEl.height = Math.round(H * currentDPR);
+      canvasEl.style.width = W + 'px';
+      canvasEl.style.height = H + 'px';
+      const ctx = canvasEl.getContext('2d');
+      if (ctx) ctx.setTransform(currentDPR, 0, 0, currentDPR, 0, 0);
     }
 
+    // Grid canvas always covers the full zone screen
+    applyDPR(document.getElementById('grid-canvas'));
+
     ['shape-canvas','draw-canvas','ui-canvas'].forEach(id => {
-      const c = document.getElementById(id);
-      if (c) { c.width = W; c.height = H; }
+      applyDPR(document.getElementById(id));
     });
+
+    // Re-acquire contexts after resize (buffer changed)
+    gridCtx  = document.getElementById('grid-canvas').getContext('2d');
+    shapeCtx = document.getElementById('shape-canvas').getContext('2d');
+    drawCtx  = document.getElementById('draw-canvas').getContext('2d');
+
     const pc = document.getElementById('preview-canvas');
-    if (pc) { pc.width = W; pc.height = H; }
+    applyDPR(pc);
     const sp = document.getElementById('smart-draw-preview');
-    if (sp) { sp.width = W; sp.height = H; }
+    applyDPR(sp);
     drawGrid();
     renderShapes();
   }
@@ -176,50 +226,57 @@ const Canvas = (() => {
   }
 
   function setBoardColor(id, bg, line, major) {
-    if (!bg) {
-      const match = BOARD_COLORS.find(b => b.id === id);
-      bg = match ? match.bg : '#0e2419';
-      line = match ? match.line : null;
-      major = match ? match.major : null;
+    let match = BOARD_BACKGROUNDS.find(b => b.id === id) || BOARD_COLORS.find(b => b.id === id);
+    if (!match && id) {
+      match = BOARD_BACKGROUNDS.find(b => b.id.toLowerCase() === id.toLowerCase() || b.id.endsWith(id.toLowerCase()));
     }
-    if (!line) {
-      const colors = getGridColors(bg);
-      line = colors.line;
-      major = colors.major;
+    if (match) {
+      currentBoardColor = { ...match };
+      if (bg) currentBoardColor.bg = bg;
+      if (line) currentBoardColor.line = line;
+      if (major) currentBoardColor.major = major;
+    } else {
+      bg = bg || (id && id.startsWith('#') ? id : '#0e2419');
+      if (!line) {
+        const colors = getGridColors(bg);
+        line = colors.line;
+        major = colors.major;
+      }
+      currentBoardColor = { id: id || 'custom', bg, line, major: major || line, pattern: 'grid' };
     }
-    currentBoardColor = { id, bg, line, major: major || line };
+
     const zone = document.getElementById('canvas-zone');
     if (zone) zone.style.background = currentBoardColor.bg;
 
     // Harmonize UI elements (page tabs & statusbar footer) with board color
     document.documentElement.style.setProperty('--board-bg', currentBoardColor.bg);
-    document.documentElement.setAttribute('data-board-theme', id);
+    document.documentElement.setAttribute('data-board-theme', currentBoardColor.id);
 
     drawGrid();
   }
 
   // ─────────────────────────────────────────────
-  // INFINITE FULL-SCREEN GRID — NEVER CLIPPED BY ZOOM OR PAN
+  // MULTI-PATTERN FULL-SCREEN BOARD BACKGROUND
   // ─────────────────────────────────────────────
   function drawGrid() {
     const zone = document.getElementById('canvas-zone');
     const gc   = document.getElementById('grid-canvas');
     if (!zone || !gc || !gridCtx) return;
 
-    const screenW = zone.offsetWidth || W;
-    const screenH = zone.offsetHeight || H;
+    const screenW = W || zone.offsetWidth;
+    const screenH = H || zone.offsetHeight;
 
-    if (gc.width !== screenW || gc.height !== screenH) {
-      gc.width  = screenW;
-      gc.height = screenH;
-    }
-
+    // Don't resize the grid canvas here — resize() handles DPR-aware sizing
+    // Re-apply DPR transform (may be reset by other operations)
+    gridCtx.setTransform(currentDPR, 0, 0, currentDPR, 0, 0);
     gridCtx.clearRect(0, 0, screenW, screenH);
     gridCtx.fillStyle = currentBoardColor.bg;
     gridCtx.fillRect(0, 0, screenW, screenH);
 
     if (bgImageObj && bgImageObj.complete && bgImageObj.naturalWidth > 0) {
       gridCtx.save();
+      gridCtx.imageSmoothingEnabled = true;
+      gridCtx.imageSmoothingQuality = 'high';
       const imgW = bgImageObj.naturalWidth;
       const imgH = bgImageObj.naturalHeight;
       const scale = Math.min(screenW / imgW, screenH / imgH);
@@ -229,67 +286,244 @@ const Canvas = (() => {
       const dy = (screenH - dh) / 2;
       gridCtx.drawImage(bgImageObj, dx, dy, dw, dh);
       gridCtx.restore();
-    } else {
-      const colors = (currentBoardColor.line && currentBoardColor.major)
-        ? { line: currentBoardColor.line, major: currentBoardColor.major }
-        : getGridColors(currentBoardColor.bg);
+      return;
+    }
 
-      // SmartBoard Graph Paper Grid: Always full screen, completely covering everything
-      // Base step in screen pixels tracks zoom & pan seamlessly
-      let effectiveStep = 32 * zoomLevel;
-      while (effectiveStep < 20) {
-        effectiveStep *= 2;
-      }
-      while (effectiveStep > 64) {
-        effectiveStep /= 2;
-      }
+    const pattern = currentBoardColor.pattern || 'grid';
+    if (pattern === 'none') {
+      return; // Plain solid board background
+    }
 
-      const majorStep = effectiveStep * 5;
+    const colors = (currentBoardColor.line && currentBoardColor.major)
+      ? { line: currentBoardColor.line, major: currentBoardColor.major }
+      : getGridColors(currentBoardColor.bg);
 
-      // Pan-aligned start coordinates so grid tracks canvas movement smoothly
+    // 1. DOT GRID PATTERN
+    if (pattern === 'dots') {
+      gridCtx.save();
+      gridCtx.fillStyle = currentBoardColor.dotColor || colors.line;
+      let effectiveStep = (currentBoardColor.step || 30) * zoomLevel;
+      while (effectiveStep < 16) effectiveStep *= 2;
+      while (effectiveStep > 60) effectiveStep /= 2;
       const startX = ((panX % effectiveStep) + effectiveStep) % effectiveStep;
       const startY = ((panY % effectiveStep) + effectiveStep) % effectiveStep;
-
-      gridCtx.save();
-      gridCtx.lineWidth = 1;
-
-      // 1. Regular grid lines across 100% of the screen
-      gridCtx.beginPath();
-      gridCtx.strokeStyle = colors.line;
-
+      const dotR = Math.max(1, 1.4 * Math.min(1.5, zoomLevel));
       for (let x = startX; x <= screenW; x += effectiveStep) {
-        const px = Math.floor(x) + 0.5;
-        gridCtx.moveTo(px, 0);
-        gridCtx.lineTo(px, screenH);
+        for (let y = startY; y <= screenH; y += effectiveStep) {
+          gridCtx.beginPath();
+          gridCtx.arc(x, y, dotR, 0, Math.PI * 2);
+          gridCtx.fill();
+        }
       }
-      for (let y = startY; y <= screenH; y += effectiveStep) {
-        const py = Math.floor(y) + 0.5;
-        gridCtx.moveTo(0, py);
-        gridCtx.lineTo(screenW, py);
-      }
-      gridCtx.stroke();
-
-      // 2. Major accent grid lines across 100% of the screen
-      const majorStartX = ((panX % majorStep) + majorStep) % majorStep;
-      const majorStartY = ((panY % majorStep) + majorStep) % majorStep;
-
-      gridCtx.beginPath();
-      gridCtx.strokeStyle = colors.major;
-
-      for (let x = majorStartX; x <= screenW; x += majorStep) {
-        const px = Math.floor(x) + 0.5;
-        gridCtx.moveTo(px, 0);
-        gridCtx.lineTo(px, screenH);
-      }
-      for (let y = majorStartY; y <= screenH; y += majorStep) {
-        const py = Math.floor(y) + 0.5;
-        gridCtx.moveTo(0, py);
-        gridCtx.lineTo(screenW, py);
-      }
-      gridCtx.stroke();
-
       gridCtx.restore();
+      return;
     }
+
+    // 2. NOTEBOOK RULED HORIZONTAL LINES
+    if (pattern === 'ruled') {
+      gridCtx.save();
+      let step = (currentBoardColor.step || 36) * zoomLevel;
+      while (step < 20) step *= 2;
+      const startY = ((panY % step) + step) % step;
+      gridCtx.lineWidth = 1.2;
+      gridCtx.strokeStyle = currentBoardColor.line || 'rgba(59,130,246,0.22)';
+      gridCtx.beginPath();
+      for (let y = startY; y <= screenH; y += step) {
+        const py = Math.floor(y) + 0.5;
+        gridCtx.moveTo(0, py);
+        gridCtx.lineTo(screenW, py);
+      }
+      gridCtx.stroke();
+      if (currentBoardColor.margin) {
+        const marginX = 85 * zoomLevel + panX;
+        if (marginX > 0 && marginX < screenW) {
+          gridCtx.beginPath();
+          gridCtx.strokeStyle = currentBoardColor.margin;
+          gridCtx.lineWidth = 1.5;
+          gridCtx.moveTo(marginX, 0);
+          gridCtx.lineTo(marginX, screenH);
+          gridCtx.stroke();
+        }
+      }
+      gridCtx.restore();
+      return;
+    }
+
+    // 3. 4-LINE ENGLISH SCRIPT / HANDWRITING GUIDE
+    if (pattern === 'fourline') {
+      gridCtx.save();
+      let groupH = (currentBoardColor.step || 48) * zoomLevel;
+      while (groupH < 32) groupH *= 2;
+      const lineGap = groupH / 3;
+      const totalBlock = groupH + 24 * zoomLevel;
+      const startY = ((panY % totalBlock) + totalBlock) % totalBlock;
+      for (let y = startY - totalBlock; y <= screenH; y += totalBlock) {
+        // Line 1: top line
+        gridCtx.strokeStyle = currentBoardColor.line || 'rgba(59,130,246,0.30)';
+        gridCtx.lineWidth = 1;
+        gridCtx.setLineDash([]);
+        gridCtx.beginPath();
+        gridCtx.moveTo(0, y);
+        gridCtx.lineTo(screenW, y);
+        gridCtx.stroke();
+        // Line 2: midline (dashed)
+        gridCtx.strokeStyle = currentBoardColor.midLine || 'rgba(239,68,68,0.35)';
+        gridCtx.setLineDash([6, 4]);
+        gridCtx.beginPath();
+        gridCtx.moveTo(0, y + lineGap);
+        gridCtx.lineTo(screenW, y + lineGap);
+        gridCtx.stroke();
+        // Line 3: baseline
+        gridCtx.setLineDash([]);
+        gridCtx.strokeStyle = currentBoardColor.midLine || 'rgba(239,68,68,0.35)';
+        gridCtx.beginPath();
+        gridCtx.moveTo(0, y + lineGap * 2);
+        gridCtx.lineTo(screenW, y + lineGap * 2);
+        gridCtx.stroke();
+        // Line 4: descender
+        gridCtx.strokeStyle = currentBoardColor.line || 'rgba(59,130,246,0.30)';
+        gridCtx.beginPath();
+        gridCtx.moveTo(0, y + lineGap * 3);
+        gridCtx.lineTo(screenW, y + lineGap * 3);
+        gridCtx.stroke();
+      }
+      gridCtx.restore();
+      return;
+    }
+
+    // 4. ISOMETRIC 3D TRIANGULAR GRID
+    if (pattern === 'isometric') {
+      gridCtx.save();
+      gridCtx.strokeStyle = currentBoardColor.line || 'rgba(148,163,184,0.13)';
+      gridCtx.lineWidth = 1;
+      const isoStep = 32 * zoomLevel;
+      const tan30 = 0.57735;
+      const startY = ((panY % isoStep) + isoStep) % isoStep;
+      gridCtx.beginPath();
+      for (let y = startY; y <= screenH; y += isoStep) {
+        gridCtx.moveTo(0, y);
+        gridCtx.lineTo(screenW, y);
+      }
+      const diagStep = isoStep / tan30;
+      const startX = ((panX % diagStep) + diagStep) % diagStep;
+      const extra = screenH / tan30;
+      for (let x = startX - extra; x <= screenW + extra; x += diagStep) {
+        gridCtx.moveTo(x, 0);
+        gridCtx.lineTo(x + extra, screenH);
+        gridCtx.moveTo(x, 0);
+        gridCtx.lineTo(x - extra, screenH);
+      }
+      gridCtx.stroke();
+      gridCtx.restore();
+      return;
+    }
+
+    // 5. POLAR COORDINATE GRID
+    if (pattern === 'polar') {
+      gridCtx.save();
+      const originX = (screenW / 2) + panX;
+      const originY = (screenH / 2) + panY;
+      const maxR = Math.hypot(screenW, screenH);
+      const ringStep = 44 * zoomLevel;
+      gridCtx.strokeStyle = currentBoardColor.line || 'rgba(148,163,184,0.13)';
+      gridCtx.lineWidth = 1;
+      for (let r = ringStep; r <= maxR; r += ringStep) {
+        gridCtx.beginPath();
+        gridCtx.arc(originX, originY, r, 0, Math.PI * 2);
+        gridCtx.stroke();
+      }
+      for (let a = 0; a < 360; a += 30) {
+        const rad = (a * Math.PI) / 180;
+        gridCtx.beginPath();
+        gridCtx.moveTo(originX, originY);
+        gridCtx.lineTo(originX + Math.cos(rad) * maxR, originY + Math.sin(rad) * maxR);
+        gridCtx.stroke();
+      }
+      gridCtx.strokeStyle = currentBoardColor.major || 'rgba(234,179,8,0.5)';
+      gridCtx.lineWidth = 2;
+      gridCtx.beginPath();
+      gridCtx.moveTo(originX - maxR, originY);
+      gridCtx.lineTo(originX + maxR, originY);
+      gridCtx.moveTo(originX, originY - maxR);
+      gridCtx.lineTo(originX, originY + maxR);
+      gridCtx.stroke();
+      gridCtx.restore();
+      return;
+    }
+
+    // 6. STANDARD / COORDINATE AXES GRID (tracks zoom & pan seamlessly)
+    let effectiveStep = 32 * zoomLevel;
+    while (effectiveStep < 20) effectiveStep *= 2;
+    while (effectiveStep > 64) effectiveStep /= 2;
+
+    const majorStep = effectiveStep * 5;
+    const startX = ((panX % effectiveStep) + effectiveStep) % effectiveStep;
+    const startY = ((panY % effectiveStep) + effectiveStep) % effectiveStep;
+
+    gridCtx.save();
+    gridCtx.lineWidth = 1;
+
+    // Regular grid lines
+    gridCtx.beginPath();
+    gridCtx.strokeStyle = colors.line;
+    for (let x = startX; x <= screenW; x += effectiveStep) {
+      const px = Math.floor(x) + 0.5;
+      gridCtx.moveTo(px, 0);
+      gridCtx.lineTo(px, screenH);
+    }
+    for (let y = startY; y <= screenH; y += effectiveStep) {
+      const py = Math.floor(y) + 0.5;
+      gridCtx.moveTo(0, py);
+      gridCtx.lineTo(screenW, py);
+    }
+    gridCtx.stroke();
+
+    // Major accent grid lines
+    const majorStartX = ((panX % majorStep) + majorStep) % majorStep;
+    const majorStartY = ((panY % majorStep) + majorStep) % majorStep;
+
+    gridCtx.beginPath();
+    gridCtx.strokeStyle = colors.major;
+    for (let x = majorStartX; x <= screenW; x += majorStep) {
+      const px = Math.floor(x) + 0.5;
+      gridCtx.moveTo(px, 0);
+      gridCtx.lineTo(px, screenH);
+    }
+    for (let y = majorStartY; y <= screenH; y += majorStep) {
+      const py = Math.floor(y) + 0.5;
+      gridCtx.moveTo(0, py);
+      gridCtx.lineTo(screenW, py);
+    }
+    gridCtx.stroke();
+
+    // Prominent coordinate axes if pattern === 'axes'
+    if (pattern === 'axes') {
+      const originX = Math.round((screenW / 2) + panX);
+      const originY = Math.round((screenH / 2) + panY);
+      gridCtx.strokeStyle = currentBoardColor.major || '#f59e0b';
+      gridCtx.lineWidth = 2.5;
+      gridCtx.beginPath();
+      // X Axis with arrow
+      if (originY >= 0 && originY <= screenH) {
+        gridCtx.moveTo(0, originY);
+        gridCtx.lineTo(screenW, originY);
+      }
+      // Y Axis with arrow
+      if (originX >= 0 && originX <= screenW) {
+        gridCtx.moveTo(originX, 0);
+        gridCtx.lineTo(originX, screenH);
+      }
+      gridCtx.stroke();
+
+      // Axis label origin marker
+      gridCtx.fillStyle = currentBoardColor.major || '#f59e0b';
+      gridCtx.font = 'bold 11px system-ui, sans-serif';
+      if (originX >= 10 && originX <= screenW - 10 && originY >= 10 && originY <= screenH - 10) {
+        gridCtx.fillText('(0,0)', originX + 5, originY - 5);
+      }
+    }
+
+    gridCtx.restore();
   }
 
   function setBgImage(dataUrl) {
@@ -844,6 +1078,80 @@ const Canvas = (() => {
     document.getElementById('formula-badge')?.classList.add('hidden');
   }
 
+  function updateShapeDimensionBar(s) {
+    let bar = document.getElementById('shape-dimension-bar');
+    if (!s || s.type === 'text-block' || s.type === 'table' || s.type === 'stickyNote') {
+      if (bar) bar.classList.add('hidden');
+      return;
+    }
+
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'shape-dimension-bar';
+      bar.className = 'shape-dimension-bar';
+      const zone = document.getElementById('canvas-zone');
+      if (zone) zone.appendChild(bar);
+      else document.body.appendChild(bar);
+    }
+
+    const b = (typeof Shapes !== 'undefined' && Shapes.getBounds) ? Shapes.getBounds(s) : { x: s.x, y: s.y, w: s.w || 100, h: s.h || 100 };
+    const screenX = b.x * zoomLevel + panX;
+    const screenY = b.y * zoomLevel + panY;
+    const screenW = b.w * zoomLevel;
+
+    bar.style.left = `${Math.max(10, screenX + screenW / 2)}px`;
+    bar.style.top = `${Math.max(10, screenY - 38)}px`;
+    bar.classList.remove('hidden');
+    bar.innerHTML = '';
+
+    if (s.type === 'graph') {
+      const btn = document.createElement('button');
+      btn.className = 'sdb-chip sdb-chip-graph';
+      btn.innerHTML = '📈 Edit Equations ✎';
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        if (typeof GraphObject !== 'undefined') GraphObject.openEditor(s);
+      };
+      bar.appendChild(btn);
+      return;
+    }
+
+    const dims = [];
+    if (s.w !== undefined) dims.push({ prop: 'w', label: 'W', val: Math.round(s.w) });
+    if (s.h !== undefined) dims.push({ prop: 'h', label: 'H', val: Math.round(s.h) });
+    if (s.r !== undefined) dims.push({ prop: 'r', label: 'Radius', val: Math.round(s.r) });
+    if (s.side !== undefined) dims.push({ prop: 'side', label: 'Side', val: Math.round(s.side) });
+    if (s.base !== undefined) dims.push({ prop: 'base', label: 'Base', val: Math.round(s.base) });
+    if (s.height !== undefined) dims.push({ prop: 'height', label: 'Height', val: Math.round(s.height) });
+    if (s.d1 !== undefined) dims.push({ prop: 'd1', label: 'd₁', val: Math.round(s.d1) });
+    if (s.d2 !== undefined) dims.push({ prop: 'd2', label: 'd₂', val: Math.round(s.d2) });
+
+    dims.forEach(d => {
+      const chip = document.createElement('button');
+      chip.className = 'sdb-chip';
+      chip.innerHTML = `<span>${d.label}:</span> <b>${d.val}px</b> <span class="sdb-pen">✎</span>`;
+      chip.title = `Click to edit ${d.label} dimension`;
+      chip.onclick = (e) => {
+        e.stopPropagation();
+        const newVal = prompt(`Edit ${d.label} (pixels):`, d.val);
+        if (newVal !== null) {
+          const num = parseFloat(newVal);
+          if (!isNaN(num) && num > 5) {
+            s[d.prop] = num;
+            if (s.type === 'square' || s.type === 'circle') {
+              if (d.prop === 'w') s.h = num;
+              if (d.prop === 'h') s.w = num;
+            }
+            renderShapes();
+            saveHistory();
+            updateShapeDimensionBar(s);
+          }
+        }
+      };
+      bar.appendChild(chip);
+    });
+  }
+
   function selectShape(s) {
     shapes.forEach(sh => sh.selected = false);
     if (s) {
@@ -873,12 +1181,14 @@ const Canvas = (() => {
     renderShapes();
     UI.showPropPanel(selected);
     updateFloatingToolbar();
+    updateShapeDimensionBar(selected);
   }
 
   function deselectAll() {
     selectShape(null);
     UI.hidePropPanel();
     updateFloatingToolbar();
+    updateShapeDimensionBar(null);
     if (typeof TableTool !== 'undefined') TableTool.hideTableContextToolbar();
     if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.hideNoteContextToolbar();
   }
@@ -919,16 +1229,18 @@ const Canvas = (() => {
   function getPosFromEvent(e) {
     const sc = document.getElementById('shape-canvas');
     const r  = sc.getBoundingClientRect();
-    const scaleX = sc.width / r.width || 1;
-    const scaleY = sc.height / r.height || 1;
+    // Use logical (CSS) coordinates — DPR is handled by the canvas transform
+    const scaleX = W / r.width || 1;
+    const scaleY = H / r.height || 1;
     return { x: (e.clientX - r.left) * scaleX, y: (e.clientY - r.top) * scaleY };
   }
 
   function getPosFromTouch(touch) {
     const sc = document.getElementById('shape-canvas');
     const r  = sc.getBoundingClientRect();
-    const scaleX = sc.width / r.width || 1;
-    const scaleY = sc.height / r.height || 1;
+    // Use logical (CSS) coordinates — DPR is handled by the canvas transform
+    const scaleX = W / r.width || 1;
+    const scaleY = H / r.height || 1;
     return { x: (touch.clientX - r.left) * scaleX, y: (touch.clientY - r.top) * scaleY };
   }
 
@@ -1036,6 +1348,9 @@ const Canvas = (() => {
     } else if (hit && hit.type === 'stickyNote' && typeof StickyNotesTool !== 'undefined') {
       selectShape(hit);
       StickyNotesTool.editNote(hit);
+    } else if (hit && hit.type === 'graph' && typeof GraphObject !== 'undefined') {
+      selectShape(hit);
+      GraphObject.openEditor(hit);
     }
   }
   function onCursorPos(e) {
@@ -1118,9 +1433,15 @@ const Canvas = (() => {
       return;
     }
 
-    // 2 fingers smooth pan & pinch-zoom
+    // 2 fingers — ONLY allow pan/zoom when NOT using drawing tools
+    // This prevents the eraser/pen from accidentally triggering canvas movement
     if (e.touches.length === 2) {
       e.preventDefault();
+      if (toolBlocksTwoFinger()) {
+        // Drawing tool active: end the stroke, ignore second finger entirely
+        if (typeof Drawing !== 'undefined') Drawing.touchEnd();
+        return; // DO NOT enter two-finger pan/zoom mode
+      }
       if (typeof Drawing !== 'undefined') Drawing.touchEnd();
       handleTwoFingerTouchStart(e);
       return;
@@ -1159,6 +1480,11 @@ const Canvas = (() => {
           StickyNotesTool.editNote(hit);
           lastTap = 0; lastTapPos = null;
           return;
+        } else if (hit && hit.type === 'graph' && typeof GraphObject !== 'undefined') {
+          selectShape(hit);
+          GraphObject.openEditor(hit);
+          lastTap = 0; lastTapPos = null;
+          return;
         }
       }
       lastTap    = now;
@@ -1181,7 +1507,8 @@ const Canvas = (() => {
       return;
     }
 
-    if (e.touches.length === 2) {
+    // Two-finger move: only process if two-finger mode is active AND tool allows it
+    if (e.touches.length === 2 && twoFingerActive && !toolBlocksTwoFinger()) {
       e.preventDefault();
       handleTwoFingerTouchMove(e);
       return;
@@ -1726,13 +2053,12 @@ const Canvas = (() => {
   function getDrawData() {
     try { return drawCtx.getImageData(0, 0, W, H); } catch(e) { return null; }
   }
-  // Returns draw canvas as a base64 PNG string — safe to JSON-serialize
+  // Returns draw canvas as a base64 PNG string — safe to JSON-serialize at full native resolution
   function getDrawDataUrl() {
     try {
-      const tmp = document.createElement('canvas');
-      tmp.width = W; tmp.height = H;
-      tmp.getContext('2d').putImageData(drawCtx.getImageData(0, 0, W, H), 0, 0);
-      return tmp.toDataURL('image/png');
+      const dc = document.getElementById('draw-canvas');
+      if (dc) return dc.toDataURL('image/png');
+      return null;
     } catch(e) { return null; }
   }
   function loadPageState(savedShapes, savedDrawData, savedBgImage) {
@@ -1744,7 +2070,9 @@ const Canvas = (() => {
       // Support both raw ImageData (in-memory page switch) and base64 string (loaded from file)
       if (typeof savedDrawData === 'string') {
         const img = new Image();
-        img.onload = () => drawCtx.drawImage(img, 0, 0);
+        img.onload = () => {
+          drawCtx.drawImage(img, 0, 0, W, H);
+        };
         img.src = savedDrawData;
       } else {
         try { drawCtx.putImageData(savedDrawData, 0, 0); } catch(e){}
@@ -1819,27 +2147,48 @@ const Canvas = (() => {
   }
 
   function snapshot() {
+    const dpr = currentDPR || window.devicePixelRatio || 1;
     const out = document.createElement('canvas');
-    out.width = W; out.height = H;
+    out.width = Math.round(W * dpr);
+    out.height = Math.round(H * dpr);
     const ctx = out.getContext('2d');
-    drawBaseGridOn(ctx, W, H);
-    try { ctx.drawImage(document.getElementById('shape-canvas'), 0, 0); } catch(e) {}
-    try { ctx.drawImage(document.getElementById('draw-canvas'), 0, 0); } catch(e) {}
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    const gc = document.getElementById('grid-canvas');
+    const sc = document.getElementById('shape-canvas');
+    const dc = document.getElementById('draw-canvas');
+    try {
+      if (gc) ctx.drawImage(gc, 0, 0, W, H);
+      else drawBaseGridOn(ctx, W, H);
+    } catch(e) { drawBaseGridOn(ctx, W, H); }
+    try { if (sc) ctx.drawImage(sc, 0, 0, W, H); } catch(e) {}
+    try { if (dc) ctx.drawImage(dc, 0, 0, W, H); } catch(e) {}
     try { return out.toDataURL('image/png'); } catch(e) { return ''; }
   }
 
-  // JPEG version for PDF export (smaller, reliable)
+  // JPEG version for PDF export (smaller, reliable, high-res)
   function snapshotJpeg() {
+    const dpr = currentDPR || window.devicePixelRatio || 1;
     const out = document.createElement('canvas');
-    out.width = W; out.height = H;
+    out.width = Math.round(W * dpr);
+    out.height = Math.round(H * dpr);
     const ctx = out.getContext('2d');
-    // White bg fallback for JPEG (no transparency)
-    ctx.fillStyle = '#ffffff';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.fillStyle = currentBoardColor.bg || '#ffffff';
     ctx.fillRect(0, 0, W, H);
-    drawBaseGridOn(ctx, W, H);
-    try { ctx.drawImage(document.getElementById('shape-canvas'), 0, 0); } catch(e) {}
-    try { ctx.drawImage(document.getElementById('draw-canvas'), 0, 0); } catch(e) {}
-    try { return out.toDataURL('image/jpeg', 0.92); } catch(e) { return ''; }
+    const gc = document.getElementById('grid-canvas');
+    const sc = document.getElementById('shape-canvas');
+    const dc = document.getElementById('draw-canvas');
+    try {
+      if (gc) ctx.drawImage(gc, 0, 0, W, H);
+      else drawBaseGridOn(ctx, W, H);
+    } catch(e) { drawBaseGridOn(ctx, W, H); }
+    try { if (sc) ctx.drawImage(sc, 0, 0, W, H); } catch(e) {}
+    try { if (dc) ctx.drawImage(dc, 0, 0, W, H); } catch(e) {}
+    try { return out.toDataURL('image/jpeg', 0.95); } catch(e) { return ''; }
   }
 
   function getShapeCount() { return shapes.length; }
@@ -1861,6 +2210,7 @@ const Canvas = (() => {
     toggleTextMoreMenu, duplicateSelectedText, copySelectedText, bringTextToFront,
     showToolbarForTextTool, getSelected: () => selected,
     getBoardColorId: () => currentBoardColor.id, getBoardColor: () => currentBoardColor,
+    getBoardBackgrounds: () => BOARD_BACKGROUNDS,
     zoomIn, zoomOut, resetZoom, setZoom, getZoom,
     handleTwoFingerTouchStart, handleTwoFingerTouchMove, handleTwoFingerTouchEnd
   };

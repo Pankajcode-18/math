@@ -159,13 +159,17 @@ const App = (() => {
   }
 
   function saveCurrent() {
-    pages[currentPage].shapes      = Canvas.getShapes();
-    pages[currentPage].drawData    = Canvas.getDrawData();    // in-memory ImageData (fast page switching)
-    pages[currentPage].drawDataUrl = Canvas.getDrawDataUrl(); // base64 PNG string (persisted to file)
-    pages[currentPage].bgImage     = Canvas.getBgImage();
+    pages[currentPage].shapes       = Canvas.getShapes();
+    pages[currentPage].drawData     = Canvas.getDrawData();    // in-memory ImageData (fast page switching)
+    pages[currentPage].drawDataUrl  = Canvas.getDrawDataUrl(); // base64 PNG string (persisted to file)
+    pages[currentPage].bgImage      = Canvas.getBgImage();
+    pages[currentPage].boardColorId = (typeof Canvas !== 'undefined' && Canvas.getBoardColorId) ? Canvas.getBoardColorId() : null;
   }
 
   function loadCurrent() {
+    if (pages[currentPage].boardColorId && typeof Canvas !== 'undefined' && Canvas.setBoardColor) {
+      Canvas.setBoardColor(pages[currentPage].boardColorId);
+    }
     const drawData = pages[currentPage].drawData;
     // Only use ImageData if it's a real ImageData instance (not {} from JSON parse)
     const drawSrc = (drawData instanceof ImageData)
@@ -356,7 +360,10 @@ const App = (() => {
 
     for (let i = 0; i < pages.length; i++) {
       showToast(`Rendering page ${i + 1} of ${pages.length}…`);
-      Canvas.loadPageState(pages[i].shapes, pages[i].drawData);
+      if (pages[i].boardColorId && typeof Canvas !== 'undefined' && Canvas.setBoardColor) {
+        Canvas.setBoardColor(pages[i].boardColorId);
+      }
+      Canvas.loadPageState(pages[i].shapes, pages[i].drawData, pages[i].bgImage || null);
       // Wait for canvas to fully paint
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       await new Promise(r => setTimeout(r, 150));
@@ -366,7 +373,10 @@ const App = (() => {
     }
 
     // Restore original page
-    Canvas.loadPageState(pages[savedPage].shapes, pages[savedPage].drawData);
+    if (pages[savedPage].boardColorId && typeof Canvas !== 'undefined' && Canvas.setBoardColor) {
+      Canvas.setBoardColor(pages[savedPage].boardColorId);
+    }
+    Canvas.loadPageState(pages[savedPage].shapes, pages[savedPage].drawData, pages[savedPage].bgImage || null);
     currentPage = savedPage;
     renderPageTabs();
 

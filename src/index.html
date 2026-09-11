@@ -486,6 +486,20 @@
           </div>
         </button>
 
+        <!-- 5b. Interactive Board Graph Object (y = f(x)) -->
+        <button class="fic-opt-btn" onclick="GraphObject.insertGraphOnBoard(); UI.closeInsertFlyout()" title="Insert Interactive Function Graph (y = f(x)) onto Board">
+          <div class="fic-opt-icon graph-obj-icon" style="background:rgba(56,189,248,0.18);color:#38bdf8;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 3v18h18"/>
+              <path d="M7 16c2-8 6-8 8 0s6-8 6-8"/>
+            </svg>
+          </div>
+          <div class="fic-opt-text">
+            <span class="fic-opt-name">Board Function Graph</span>
+            <span class="fic-opt-desc">y = x², sin(x), editable on board</span>
+          </div>
+        </button>
+
         <!-- 6. Advanced Table -->
         <button class="fic-opt-btn" onclick="TableTool.openCreateModal(); UI.closeInsertFlyout()" title="Create customizable data or math table">
           <div class="fic-opt-icon table-icon" style="background:rgba(234,179,8,0.18);color:#eab308;">
@@ -768,6 +782,7 @@
 <script src="tools/science-shapes.js"></script>
 <script src="tools/table-tool.js"></script>
 <script src="tools/sticky-notes.js"></script>
+<script src="tools/graph-object.js"></script>
 <script src="tools/shapes.js"></script>
 <script src="tools/gesture-eraser.js"></script>
 <script src="tools/geometry-tool.js"></script>

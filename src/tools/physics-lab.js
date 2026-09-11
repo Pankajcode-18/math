@@ -558,7 +558,7 @@ const PhysicsLab = (() => {
       <!-- MAIN BODY -->
       <div style="display:flex;flex:1;overflow:hidden;position:relative;">
         <!-- CONTROLS SIDEBAR -->
-        <div id="phys-sidebar" style="width:310px;background:rgba(6,13,28,0.95);backdrop-filter:blur(20px);border-right:1px solid rgba(255,255,255,0.08);overflow-y:auto;padding:14px 12px;flex-shrink:0;display:flex;flex-direction:column;gap:12px;">
+        <div id="phys-sidebar" style="width:clamp(220px, 18vw, 280px);background:rgba(6,13,28,0.95);backdrop-filter:blur(20px);border-right:1px solid rgba(255,255,255,0.08);overflow-y:auto;padding:10px 8px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;">
           <!-- Injected dynamically based on activeSim -->
         </div>
 
@@ -628,46 +628,46 @@ const PhysicsLab = (() => {
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
         border: 1px solid rgba(255, 255, 255, 0.09);
-        border-radius: 14px;
-        padding: 14px 12px;
+        border-radius: 12px;
+        padding: 9px 10px;
         display: flex;
         flex-direction: column;
-        gap: 11px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+        gap: 7px;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
         transition: border-color 0.2s, box-shadow 0.2s;
       }
       .phys-ctrl-group:hover {
         border-color: rgba(56, 189, 248, 0.28);
-        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
       }
 
       .phys-ctrl-title {
-        font-size: 11px;
+        font-size: 10.5px;
         font-weight: 800;
-        letter-spacing: .08em;
+        letter-spacing: .06em;
         text-transform: uppercase;
         color: #f1f5f9;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding-bottom: 7px;
+        padding-bottom: 5px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.07);
       }
       .phys-ctrl-title .title-icon {
-        font-size: 14px;
-        margin-right: 4px;
+        font-size: 13px;
+        margin-right: 3px;
       }
 
       .phys-slider-row {
         display: flex;
         flex-direction: column;
-        gap: 5px;
+        gap: 3px;
       }
       .phys-slider-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        font-size: 11.5px;
+        font-size: 10.5px;
         font-weight: 600;
         color: #94a3b8;
       }
@@ -675,10 +675,10 @@ const PhysicsLab = (() => {
         color: #38bdf8;
         font-family: 'Cascadia Code', 'Fira Code', monospace;
         font-weight: 700;
-        font-size: 11.5px;
+        font-size: 10.5px;
         background: rgba(56, 189, 248, 0.12);
-        padding: 2px 7px;
-        border-radius: 6px;
+        padding: 1px 6px;
+        border-radius: 5px;
         border: 1px solid rgba(56, 189, 248, 0.25);
       }
 
@@ -687,9 +687,9 @@ const PhysicsLab = (() => {
         -webkit-appearance: none;
         appearance: none;
         width: 100%;
-        height: 6px;
+        height: 5px;
         background: rgba(255, 255, 255, 0.12);
-        border-radius: 6px;
+        border-radius: 5px;
         outline: none;
         cursor: pointer;
         touch-action: manipulation;
@@ -698,21 +698,21 @@ const PhysicsLab = (() => {
       .phys-slider::-webkit-slider-thumb {
         -webkit-appearance: none;
         appearance: none;
-        width: 18px;
-        height: 18px;
+        width: 15px;
+        height: 15px;
         border-radius: 50%;
         background: #ffffff;
-        border: 2.5px solid #38bdf8;
-        box-shadow: 0 0 10px rgba(56, 189, 248, 0.9), 0 2px 5px rgba(0, 0, 0, 0.5);
+        border: 2px solid #38bdf8;
+        box-shadow: 0 0 8px rgba(56, 189, 248, 0.8), 0 1px 4px rgba(0, 0, 0, 0.5);
         cursor: pointer;
         transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s;
       }
       .phys-slider::-webkit-slider-thumb:hover {
         transform: scale(1.2);
-        box-shadow: 0 0 16px rgba(56, 189, 248, 1), 0 2px 6px rgba(0, 0, 0, 0.6);
+        box-shadow: 0 0 14px rgba(56, 189, 248, 1), 0 2px 5px rgba(0, 0, 0, 0.6);
       }
       .phys-slider::-webkit-slider-thumb:active {
-        transform: scale(1.3);
+        transform: scale(1.25);
         background: #38bdf8;
         border-color: #ffffff;
       }
@@ -721,19 +721,19 @@ const PhysicsLab = (() => {
       .phys-planet-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 6px;
-        margin-top: 4px;
+        gap: 4px;
+        margin-top: 2px;
       }
       .phys-planet-btn {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 2px;
-        padding: 7px 4px 6px;
+        gap: 1px;
+        padding: 5px 2px 4px;
         background: rgba(255, 255, 255, 0.04);
         border: 1px solid rgba(255, 255, 255, 0.09);
-        border-radius: 10px;
+        border-radius: 8px;
         cursor: pointer;
         transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
         touch-action: manipulation;
@@ -741,17 +741,17 @@ const PhysicsLab = (() => {
       .phys-planet-btn:hover {
         background: rgba(56, 189, 248, 0.12);
         border-color: rgba(56, 189, 248, 0.4);
-        transform: translateY(-2px);
+        transform: translateY(-1px);
       }
       .phys-planet-btn.active {
         background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(129, 140, 248, 0.2));
         border-color: #38bdf8;
-        box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+        box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
         transform: translateY(-1px);
       }
-      .phys-planet-btn .p-icon { font-size: 16px; }
-      .phys-planet-btn .p-name { font-size: 10px; font-weight: 700; color: #f8fafc; }
-      .phys-planet-btn .p-g { font-size: 8.5px; font-family: monospace; color: #94a3b8; }
+      .phys-planet-btn .p-icon { font-size: 13px; }
+      .phys-planet-btn .p-name { font-size: 9px; font-weight: 700; color: #f8fafc; }
+      .phys-planet-btn .p-g { font-size: 7.5px; font-family: monospace; color: #94a3b8; }
       .phys-planet-btn.active .p-g { color: #7dd3fc; font-weight: 600; }
 
       /* iOS Toggle Switch */

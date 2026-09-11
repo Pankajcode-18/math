@@ -18,18 +18,31 @@ const GestureEraser = (() => {
 
   function getAuraCanvas() {
     let ac = document.getElementById('gesture-eraser-aura');
+    const zone = document.getElementById('canvas-zone');
+    if (!zone) return null;
+    const dpr = window.devicePixelRatio || 1;
+    const size = (typeof Canvas !== 'undefined' && Canvas.getCanvasSize) ? Canvas.getCanvasSize() : { W: zone.offsetWidth, H: zone.offsetHeight };
+    const logicalW = size.W || zone.offsetWidth;
+    const logicalH = size.H || zone.offsetHeight;
+
     if (!ac) {
-      const zone = document.getElementById('canvas-zone');
-      if (!zone) return null;
       ac = document.createElement('canvas');
       ac.id = 'gesture-eraser-aura';
       ac.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:90;';
-      const size = (typeof Canvas !== 'undefined') ? Canvas.getCanvasSize() : { W: zone.offsetWidth, H: zone.offsetHeight };
-      ac.width  = size.W || zone.offsetWidth;
-      ac.height = size.H || zone.offsetHeight;
       const vp = document.getElementById('canvas-viewport');
       if (vp) vp.appendChild(ac);
       else zone.appendChild(ac);
+    }
+
+    const targetW = Math.round(logicalW * dpr);
+    const targetH = Math.round(logicalH * dpr);
+    if (ac.width !== targetW || ac.height !== targetH) {
+      ac.width = targetW;
+      ac.height = targetH;
+      ac.style.width = logicalW + 'px';
+      ac.style.height = logicalH + 'px';
+      auraCtx = ac.getContext('2d');
+      if (auraCtx) auraCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     return ac;
   }
@@ -39,6 +52,8 @@ const GestureEraser = (() => {
     if (!ac) return null;
     if (!auraCtx || auraCtx.canvas !== ac) {
       auraCtx = ac.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      if (auraCtx) auraCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     return auraCtx;
   }
@@ -46,7 +61,10 @@ const GestureEraser = (() => {
   function clearAura() {
     const ac = document.getElementById('gesture-eraser-aura');
     if (ac && auraCtx) {
-      auraCtx.clearRect(0, 0, ac.width, ac.height);
+      const zone = document.getElementById('canvas-zone');
+      const w = zone ? zone.offsetWidth : ac.width;
+      const h = zone ? zone.offsetHeight : ac.height;
+      auraCtx.clearRect(0, 0, w, h);
     }
   }
 

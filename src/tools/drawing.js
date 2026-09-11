@@ -143,21 +143,23 @@ const Drawing = (() => {
   function getMousePos(e) {
     const dc = getDrawCanvas();
     const r  = dc.getBoundingClientRect();
-    const scaleX = dc.width / r.width || 1;
-    const scaleY = dc.height / r.height || 1;
+    const logicalW = (typeof Canvas !== 'undefined' && Canvas.getCanvasSize) ? Canvas.getCanvasSize().W : (dc.offsetWidth || r.width);
+    const logicalH = (typeof Canvas !== 'undefined' && Canvas.getCanvasSize) ? Canvas.getCanvasSize().H : (dc.offsetHeight || r.height);
+    const scaleX = logicalW / r.width || 1;
+    const scaleY = logicalH / r.height || 1;
     return { x: (e.clientX - r.left) * scaleX, y: (e.clientY - r.top) * scaleY };
   }
 
   // ─────────────────────────────────────────────
-  // TOUCH HANDLERS — called from canvas.js
-  // (draw-canvas has pointer-events:none so we
-  //  route touch through the shape canvas)
+  // TOUCH HANDLERS — called from canvas.js or draw-canvas
   // ─────────────────────────────────────────────
   function getTouchPos(touch) {
     const dc = getDrawCanvas();
     const r  = dc.getBoundingClientRect();
-    const scaleX = dc.width / r.width || 1;
-    const scaleY = dc.height / r.height || 1;
+    const logicalW = (typeof Canvas !== 'undefined' && Canvas.getCanvasSize) ? Canvas.getCanvasSize().W : (dc.offsetWidth || r.width);
+    const logicalH = (typeof Canvas !== 'undefined' && Canvas.getCanvasSize) ? Canvas.getCanvasSize().H : (dc.offsetHeight || r.height);
+    const scaleX = logicalW / r.width || 1;
+    const scaleY = logicalH / r.height || 1;
     return { x: (touch.clientX - r.left) * scaleX, y: (touch.clientY - r.top) * scaleY };
   }
 
@@ -428,6 +430,11 @@ const Drawing = (() => {
   // ─────────────────────────────────────────────
   // ATTACH EVENTS
   // ─────────────────────────────────────────────
+  function isDrawingTool() {
+    const tool = (typeof App !== 'undefined') ? App.currentTool : '';
+    return tool === 'pen' || tool === 'highlighter' || tool === 'eraser';
+  }
+
   // Direct touch handlers for draw-canvas (eliminates touch-to-mouse synthesis latency)
   function onDrawTouchStart(e) {
     if (e.touches.length >= 3 && typeof GestureEraser !== 'undefined') {
@@ -440,10 +447,16 @@ const Drawing = (() => {
       GestureEraser.handleTouchStart(e, (typeof Canvas !== 'undefined') ? Canvas.getPosFromTouch : null);
       return;
     }
-    if (e.touches.length === 2 && typeof Canvas !== 'undefined' && Canvas.handleTwoFingerTouchStart) {
+    if (e.touches.length === 2) {
       e.preventDefault();
+      if (isDrawingTool()) {
+        // While drawing or erasing, ignore second accidental finger/palm contact
+        return;
+      }
       endStroke();
-      Canvas.handleTwoFingerTouchStart(e);
+      if (typeof Canvas !== 'undefined' && Canvas.handleTwoFingerTouchStart) {
+        Canvas.handleTwoFingerTouchStart(e);
+      }
       return;
     }
     if (e.touches.length === 1) {
@@ -458,9 +471,15 @@ const Drawing = (() => {
       GestureEraser.handleTouchMove(e, (typeof Canvas !== 'undefined') ? Canvas.getPosFromTouch : null);
       return;
     }
-    if (e.touches.length === 2 && typeof Canvas !== 'undefined' && Canvas.handleTwoFingerTouchMove) {
+    if (e.touches.length === 2) {
       e.preventDefault();
-      Canvas.handleTwoFingerTouchMove(e);
+      if (isDrawingTool()) {
+        // Ignore accidental second touch while drawing or erasing
+        return;
+      }
+      if (typeof Canvas !== 'undefined' && Canvas.handleTwoFingerTouchMove) {
+        Canvas.handleTwoFingerTouchMove(e);
+      }
       return;
     }
     if (e.touches.length === 1) {

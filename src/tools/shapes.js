@@ -78,6 +78,15 @@ const Shapes = (() => {
       return;
     }
 
+    // ── Delegate Graph to GraphObject ──
+    if (s.type === 'graph' && typeof GraphObject !== 'undefined') {
+      GraphObject.draw(ctx, s);
+      if (s.selected) {
+        selectionHandles(ctx, s.x, s.y, s.w, s.h);
+      }
+      return;
+    }
+
     // ── Delegate science diagram types to ScienceShapes ──
     if (typeof ScienceShapes !== 'undefined' && ScienceShapes.isScienceShape(s.type)) {
       ScienceShapes.draw(ctx, s);
@@ -107,7 +116,11 @@ const Shapes = (() => {
           };
         }
         if (s._imgObj.complete && s._imgObj.naturalWidth > 0) {
+          ctx.save();
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(s._imgObj, s.x, s.y, s.w, s.h);
+          ctx.restore();
         } else {
           ctx.strokeStyle = '#c9a84c';
           ctx.setLineDash([4, 3]);
@@ -975,7 +988,8 @@ const Shapes = (() => {
   function _mathGetBounds(s) {
     switch (s.type) {
       case 'table':
-      case 'stickyNote':     return { x: s.x, y: s.y, w: s.w, h: s.h };
+      case 'stickyNote':
+      case 'graph':          return { x: s.x, y: s.y, w: s.w, h: s.h };
       case 'image':          return { x: s.x, y: s.y, w: s.w, h: s.h };
       case 'equilateral':    return { x: s.x, y: s.y, w: s.side, h: s.side * Math.sqrt(3)/2 };
       case 'rightTriangle':  return { x: s.x, y: s.y, w: s.base, h: s.height };

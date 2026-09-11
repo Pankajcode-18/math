@@ -222,8 +222,231 @@ const UI = (() => {
       }
     });
     wrap.appendChild(customLabel);
+
+    // 20+ Backgrounds Library Trigger (🎨)
+    const pickerBtn = document.createElement('button');
+    pickerBtn.className = 'bswatch bswatch-picker-trigger';
+    pickerBtn.id = 'board-bg-picker-btn';
+    pickerBtn.title = 'Browse 20+ Board Backgrounds (Math, Ruled, Lab, Isometric, Dots)';
+    pickerBtn.innerHTML = '<span style="font-size:12px;line-height:1;">🎨</span>';
+    pickerBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleBoardPicker();
+    });
+    wrap.appendChild(pickerBtn);
   }
+
   // ─────────────────────────────────────────────
+  // 20+ BOARD BACKGROUNDS PICKER MODAL
+  // ─────────────────────────────────────────────
+  let boardPickerOpen = false;
+
+  function toggleBoardPicker() {
+    if (boardPickerOpen) closeBoardPicker();
+    else openBoardPicker();
+  }
+
+  function openBoardPicker() {
+    let modal = document.getElementById('board-bg-picker-modal');
+    if (!modal) {
+      modal = createBoardPickerModal();
+    }
+    renderBoardPickerCards(modal, 'all');
+    modal.classList.add('open');
+    boardPickerOpen = true;
+  }
+
+  function closeBoardPicker() {
+    const modal = document.getElementById('board-bg-picker-modal');
+    if (modal) modal.classList.remove('open');
+    boardPickerOpen = false;
+  }
+
+  function renderMiniPattern(canvas, bg) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width = 72;
+    const h = canvas.height = 46;
+    ctx.fillStyle = bg.bg;
+    ctx.fillRect(0, 0, w, h);
+
+    if (bg.pattern === 'grid' || !bg.pattern) {
+      ctx.strokeStyle = bg.line || 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x <= w; x += 10) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+      for (let y = 0; y <= h; y += 10) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      ctx.stroke();
+      if (bg.major) {
+        ctx.strokeStyle = bg.major;
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 30) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+        for (let y = 0; y <= h; y += 30) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+        ctx.stroke();
+      }
+    } else if (bg.pattern === 'dots') {
+      ctx.fillStyle = bg.dotColor || 'rgba(255,255,255,0.35)';
+      for (let x = 5; x <= w; x += 10) {
+        for (let y = 5; y <= h; y += 10) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    } else if (bg.pattern === 'ruled') {
+      ctx.strokeStyle = bg.line || 'rgba(59,130,246,0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let y = 8; y <= h; y += 10) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      ctx.stroke();
+      if (bg.margin) {
+        ctx.strokeStyle = bg.margin;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(14, 0);
+        ctx.lineTo(14, h);
+        ctx.stroke();
+      }
+    } else if (bg.pattern === 'fourline') {
+      ctx.strokeStyle = bg.line || 'rgba(59,130,246,0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, 10); ctx.lineTo(w, 10);
+      ctx.moveTo(0, 34); ctx.lineTo(w, 34);
+      ctx.stroke();
+      ctx.strokeStyle = bg.midLine || 'rgba(239,68,68,0.4)';
+      ctx.setLineDash([3, 2]);
+      ctx.beginPath();
+      ctx.moveTo(0, 18); ctx.lineTo(w, 18);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(0, 26); ctx.lineTo(w, 26);
+      ctx.stroke();
+    } else if (bg.pattern === 'axes') {
+      ctx.strokeStyle = bg.line || 'rgba(255,255,255,0.1)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x <= w; x += 10) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+      for (let y = 0; y <= h; y += 10) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      ctx.stroke();
+      ctx.strokeStyle = bg.major || '#f59e0b';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2);
+      ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h);
+      ctx.stroke();
+    } else if (bg.pattern === 'isometric') {
+      ctx.strokeStyle = bg.line || 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let y = 0; y <= h; y += 10) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      for (let x = -h; x <= w + h; x += 16) {
+        ctx.moveTo(x, 0); ctx.lineTo(x + h, h);
+        ctx.moveTo(x, 0); ctx.lineTo(x - h, h);
+      }
+      ctx.stroke();
+    } else if (bg.pattern === 'polar') {
+      const cx = w / 2, cy = h / 2;
+      ctx.strokeStyle = bg.line || 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      for (let r = 6; r <= 24; r += 6) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = bg.major || '#f59e0b';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(0, cy); ctx.lineTo(w, cy);
+      ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
+      ctx.stroke();
+    }
+  }
+
+  function createBoardPickerModal() {
+    const modal = document.createElement('div');
+    modal.id = 'board-bg-picker-modal';
+    modal.className = 'board-bg-modal';
+    modal.innerHTML = `
+      <div class="bbm-overlay" onclick="UI.closeBoardPicker()"></div>
+      <div class="bbm-content">
+        <div class="bbm-header">
+          <div class="bbm-title-wrap">
+            <span class="bbm-icon">🎨</span>
+            <div class="bbm-title">Board Background Library</div>
+            <div class="bbm-subtitle">24 Professional SmartBoard Teaching Surfaces</div>
+          </div>
+          <button class="bbm-close" onclick="UI.closeBoardPicker()">✕</button>
+        </div>
+        <div class="bbm-tabs" id="bbm-category-tabs">
+          <button class="bbm-tab active" data-cat="all">All (24)</button>
+          <button class="bbm-tab" data-cat="plain">Plain (9)</button>
+          <button class="bbm-tab" data-cat="math">Math &amp; Graphs (3)</button>
+          <button class="bbm-tab" data-cat="writing">Writing &amp; Ruled (5)</button>
+          <button class="bbm-tab" data-cat="science">Science &amp; Lab (3)</button>
+          <button class="bbm-tab" data-cat="modern">Modern &amp; Dots (4)</button>
+        </div>
+        <div class="bbm-grid" id="bbm-cards-grid"></div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.querySelectorAll('.bbm-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        modal.querySelectorAll('.bbm-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        renderBoardPickerCards(modal, tab.dataset.cat);
+      });
+    });
+
+    return modal;
+  }
+
+  function renderBoardPickerCards(modal, filterCat) {
+    const grid = modal.querySelector('#bbm-cards-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    const list = (typeof Canvas !== 'undefined' && Canvas.getBoardBackgrounds) ? Canvas.getBoardBackgrounds() : [];
+    const curId = (typeof Canvas !== 'undefined' && Canvas.getBoardColorId) ? Canvas.getBoardColorId() : 'green';
+
+    const filtered = filterCat === 'all' ? list : list.filter(b => b.category === filterCat);
+
+    filtered.forEach(bg => {
+      const card = document.createElement('div');
+      card.className = 'bbm-card' + (bg.id === curId ? ' active' : '');
+      card.title = `${bg.label} (${bg.bg})`;
+
+      const thumb = document.createElement('canvas');
+      thumb.className = 'bbm-thumb';
+      renderMiniPattern(thumb, bg);
+
+      const labelWrap = document.createElement('div');
+      labelWrap.className = 'bbm-info';
+      labelWrap.innerHTML = `
+        <div class="bbm-name">${bg.label}</div>
+        <span class="bbm-badge bbm-badge-${bg.category}">${bg.category}</span>
+      `;
+
+      card.appendChild(thumb);
+      card.appendChild(labelWrap);
+
+      card.addEventListener('click', () => {
+        if (typeof Canvas !== 'undefined') {
+          Canvas.setBoardColor(bg.id);
+        }
+        buildBoardSwatches();
+        closeBoardPicker();
+        if (typeof App !== 'undefined' && App.showToast) {
+          App.showToast(`🎨 Board Background: ${bg.label}`);
+        }
+      });
+
+      grid.appendChild(card);
+    });
+  }
   function syncPenPanel() {
     const curSize = (typeof App !== 'undefined') ? App.penSize : 2;
     const curColor = (typeof App !== 'undefined') ? App.currentColor : '#ffffff';
@@ -1634,6 +1857,7 @@ const UI = (() => {
     buildSidebar, updateSidebarCard, prevChapter, nextChapter,
     buildShapeGrid, buildColorPalette, buildPenSizes,
     buildBoardSwatches, syncPenPanel,
+    toggleBoardPicker, openBoardPicker, closeBoardPicker,
     showPropPanel, hidePropPanel,
     toggleShapesSection,
     toggleDropdown, closeAllDropdowns,
