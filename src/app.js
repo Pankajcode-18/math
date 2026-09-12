@@ -23,7 +23,7 @@ const App = (() => {
 
   // ── multi-page state ──
   // Each page stores shapes + in-memory ImageData (drawData) + serializable base64 (drawDataUrl)
-  let pages       = [{ id: 1, label: 'Page 1', shapes: [], drawData: null, drawDataUrl: null }];
+  let pages       = [{ id: 1, label: 'Page 1', shapes: [], strokes: [], drawData: null, drawDataUrl: null, bgImage: null, history: [], redoStack: [] }];
   let currentPage = 0; // index into pages[]
 
   // ─────────────────────────────────────────────
@@ -71,6 +71,7 @@ const App = (() => {
       }
       setTimeout(() => {
         if (typeof Canvas !== 'undefined' && Canvas.resize) Canvas.resize();
+        updatePageControls();
       }, 80);
     });
 
@@ -118,35 +119,84 @@ const App = (() => {
   // ─────────────────────────────────────────────
   // MULTI-PAGE SYSTEM
   // ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // PAGE MANAGEMENT & SYNCHRONIZATION
+  // ─────────────────────────────────────────────
+  function updatePageControls() {
+    const cur = currentPage + 1;
+    const total = pages.length;
+
+    // Fullscreen floating page navigator (right side)
+    const curNumEl = $('fs-nav-page-num');
+    const totalNumEl = $('fs-nav-page-total');
+    if (curNumEl) curNumEl.textContent = cur;
+    if (totalNumEl) totalNumEl.textContent = total;
+
+    const prevBtn = $('fs-nav-prev');
+    const nextBtn = $('fs-nav-next');
+    if (prevBtn) {
+      const isFirst = (currentPage <= 0);
+      prevBtn.disabled = isFirst;
+      prevBtn.classList.toggle('disabled', isFirst);
+    }
+    if (nextBtn) {
+      const isLast = (currentPage >= total - 1);
+      nextBtn.disabled = isLast;
+      nextBtn.classList.toggle('disabled', isLast);
+    }
+
+    // Sidebar & full-screen card counters
+    const fsp = $('fs-page-counter');
+    if (fsp) fsp.textContent = `${cur}/${total}`;
+    const sbp = $('sb-page');
+    if (sbp) sbp.textContent = cur;
+  }
+
   function renderPageTabs() {
     const bar = $('page-tabs-bar');
-    // Remove all tabs (not the + button)
-    bar.querySelectorAll('.page-tab').forEach(t => t.remove());
-
-    const addBtn = $('add-page-btn');
-    pages.forEach((pg, idx) => {
-      const tab = document.createElement('button');
-      tab.className = 'page-tab' + (idx === currentPage ? ' active' : '');
-      tab.innerHTML = `
-        <span onclick="App.switchPage(${idx})">${pg.label}</span>
-        ${pages.length > 1
-          ? `<span class="del-tab" onclick="App.deletePage(${idx})" title="Delete page">×</span>`
-          : ''}`;
-      tab.addEventListener('click', e => {
-        if (!e.target.classList.contains('del-tab')) App.switchPage(idx);
+    if (bar) {
+      bar.querySelectorAll('.page-tab').forEach(t => t.remove());
+      const addBtn = $('add-page-btn');
+      pages.forEach((pg, idx) => {
+        const tab = document.createElement('button');
+        tab.className = 'page-tab' + (idx === currentPage ? ' active' : '');
+        tab.innerHTML = `
+          <span onclick="App.switchPage(${idx})">${pg.label}</span>
+          ${pages.length > 1
+            ? `<span class="del-tab" onclick="App.deletePage(${idx})" title="Delete page">×</span>`
+            : ''}`;
+        tab.addEventListener('click', e => {
+          if (!e.target.classList.contains('del-tab')) App.switchPage(idx);
+        });
+        bar.insertBefore(tab, addBtn);
       });
-      bar.insertBefore(tab, addBtn);
-    });
+    }
 
-    $('sb-page').textContent = currentPage + 1;
-    const fsp = $('fs-page-counter');
-    if (fsp) fsp.textContent = `${currentPage + 1}/${pages.length}`;
+    updatePageControls();
   }
 
   function addPage() {
-    // Save current page state
+    // 1. Save current active page state completely
     saveCurrent();
-    pages.push({ id: Date.now(), label: `Page ${pages.length + 1}`, shapes: [], drawData: null, drawDataUrl: null, bgImage: null });
+
+    // 2. Inherit current board background theme so new page matches
+    const curColorId = (typeof Canvas !== 'undefined' && Canvas.getBoardColorId) ? Canvas.getBoardColorId() : null;
+
+    // 3. Push brand new blank page object
+    pages.push({
+      id: Date.now(),
+      label: `Page ${pages.length + 1}`,
+      shapes: [],
+      strokes: [],
+      drawData: null,
+      drawDataUrl: null,
+      bgImage: null,
+      boardColorId: curColorId,
+      history: [],
+      redoStack: []
+    });
+
+    // 4. Activate new page immediately
     currentPage = pages.length - 1;
     loadCurrent();
     renderPageTabs();
@@ -162,13 +212,11 @@ const App = (() => {
   function nextPage() {
     if (currentPage < pages.length - 1) {
       switchPage(currentPage + 1);
-    } else {
-      addPage();
     }
   }
 
   function switchPage(idx) {
-    if (idx === currentPage) return;
+    if (idx === currentPage || idx < 0 || idx >= pages.length) return;
     saveCurrent();
     currentPage = idx;
     loadCurrent();
@@ -184,15 +232,19 @@ const App = (() => {
   }
 
   function saveCurrent() {
-    pages[currentPage].shapes       = Canvas.getShapes();
+    if (!pages[currentPage]) return;
+    pages[currentPage].shapes       = (typeof Canvas !== 'undefined' && Canvas.getShapes) ? Canvas.getShapes() : [];
     pages[currentPage].strokes      = (typeof Canvas !== 'undefined' && Canvas.getStrokes) ? Canvas.getStrokes() : [];
-    pages[currentPage].drawData     = Canvas.getDrawData();    // in-memory ImageData (fast page switching)
-    pages[currentPage].drawDataUrl  = Canvas.getDrawDataUrl(); // base64 PNG string (persisted to file)
-    pages[currentPage].bgImage      = Canvas.getBgImage();
+    pages[currentPage].drawData     = (typeof Canvas !== 'undefined' && Canvas.getDrawData) ? Canvas.getDrawData() : null;
+    pages[currentPage].drawDataUrl  = (typeof Canvas !== 'undefined' && Canvas.getDrawDataUrl) ? Canvas.getDrawDataUrl() : null;
+    pages[currentPage].bgImage      = (typeof Canvas !== 'undefined' && Canvas.getBgImage) ? Canvas.getBgImage() : null;
     pages[currentPage].boardColorId = (typeof Canvas !== 'undefined' && Canvas.getBoardColorId) ? Canvas.getBoardColorId() : null;
+    pages[currentPage].history      = (typeof Canvas !== 'undefined' && Canvas.getHistory) ? Canvas.getHistory() : [];
+    pages[currentPage].redoStack    = (typeof Canvas !== 'undefined' && Canvas.getRedoStack) ? Canvas.getRedoStack() : [];
   }
 
   function loadCurrent() {
+    if (!pages[currentPage]) return;
     if (pages[currentPage].boardColorId && typeof Canvas !== 'undefined' && Canvas.setBoardColor) {
       Canvas.setBoardColor(pages[currentPage].boardColorId);
     }
@@ -202,8 +254,130 @@ const App = (() => {
       ? drawData
       : (pages[currentPage].drawDataUrl || null);
     const strokes = pages[currentPage].strokes || [];
-    Canvas.loadPageState(pages[currentPage].shapes, drawSrc, pages[currentPage].bgImage || null, strokes);
+    const hist = pages[currentPage].history || [];
+    const redoStk = pages[currentPage].redoStack || [];
+    Canvas.loadPageState(
+      pages[currentPage].shapes,
+      drawSrc,
+      pages[currentPage].bgImage || null,
+      strokes,
+      hist,
+      redoStk
+    );
     UI.updateStatus();
+    updatePageControls();
+  }
+
+  // ─────────────────────────────────────────────
+  // CLEAR CURRENT PAGE (With Confirmation & Undo)
+  // ─────────────────────────────────────────────
+  function confirmClearCurrentPage() {
+    const desc = $('fs-modal-desc');
+    if (desc) {
+      desc.textContent = `This will remove all pen strokes, handwriting, shapes, and graphs from Page ${currentPage + 1}. Other pages will remain unchanged.`;
+    }
+    const modal = $('fs-clear-modal');
+    if (modal) modal.classList.remove('hidden');
+  }
+
+  function closeClearModal() {
+    const modal = $('fs-clear-modal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  function executeClearCurrentPage() {
+    closeClearModal();
+    if (typeof Canvas !== 'undefined' && Canvas.clearAll) {
+      Canvas.clearAll();
+      saveCurrent();
+      if (window.PhysicsLab && typeof PhysicsLab.clearAnnotations === 'function') PhysicsLab.clearAnnotations();
+      if (window.MathVisualizer && typeof MathVisualizer.clearAnnotations === 'function') MathVisualizer.clearAnnotations();
+      if (window.GraphEngine && typeof GraphEngine.clearAnnotations === 'function') GraphEngine.clearAnnotations();
+      showToastWithAction(`Page ${currentPage + 1} cleared`, '↩ Undo Clear', () => {
+        undo();
+      });
+    }
+  }
+
+  function clearBoard() {
+    confirmClearCurrentPage();
+  }
+
+  // ─────────────────────────────────────────────
+  // PDF READY MODAL & TRUSTED DOWNLOAD HANDLER
+  // ─────────────────────────────────────────────
+  let pendingPdfBlob = null;
+  let pendingPdfFilename = '';
+
+  function openPdfModal(pageCount, filename, sizeBytes) {
+    const modal = $('pdf-ready-modal');
+    if (!modal) return;
+    const desc = $('pdf-modal-desc');
+    const sizeKb = Math.round(sizeBytes / 1024);
+    if (desc) {
+      desc.innerHTML = `All <b>${pageCount}</b> board page${pageCount > 1 ? 's' : ''} compiled into <b>1 PDF document</b> (${sizeKb} KB).<br><span style="font-size:12px;opacity:0.85;color:#38bdf8;word-break:break-all;margin-top:6px;display:inline-block;">📄 ${filename}</span>`;
+    }
+    modal.classList.remove('hidden');
+  }
+
+  function closePdfModal() {
+    const modal = $('pdf-ready-modal');
+    if (modal) modal.classList.add('hidden');
+  }
+
+  async function downloadGeneratedPdf() {
+    if (!pendingPdfBlob) {
+      closePdfModal();
+      return;
+    }
+    const filename = pendingPdfFilename || 'PiyushDhara-Board-Notes.pdf';
+    const blob = pendingPdfBlob;
+
+    // 1. Preferred modern API on Windows: File System Access API
+    // Opens genuine Windows "Save As" dialog with .pdf extension pre-set
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{
+            description: 'PDF Document (*.pdf)',
+            accept: { 'application/pdf': ['.pdf'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        closePdfModal();
+        showToast(`✓ Saved: ${handle.name || filename}`);
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') {
+          // User clicked Cancel in Windows file picker
+          return;
+        }
+        console.warn('showSaveFilePicker failed, falling back to direct anchor download:', err);
+      }
+    }
+
+    // 2. Direct anchor click in genuine user-click event (Edge preserves .pdf extension)
+    try {
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }, 15000);
+      closePdfModal();
+      showToast(`✓ Downloaded ${filename}`);
+    } catch (err) {
+      console.error('Download error:', err);
+      showToast('❌ Download failed: ' + err.message);
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -212,6 +386,9 @@ const App = (() => {
   function setTool(tool) {
     const changed = currentTool !== tool;
     currentTool = tool;
+    if (tool !== 'select' && typeof BoardClipboard !== 'undefined' && BoardClipboard.clearSelection) {
+      BoardClipboard.clearSelection();
+    }
     document.querySelectorAll('.tool-btn[data-tool]').forEach(b => {
       b.classList.toggle('active', b.dataset.tool === tool);
     });
@@ -377,8 +554,148 @@ const App = (() => {
   // ─────────────────────────────────────────────
   // EXPORT ALL PAGES AS PDF
   // ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  // CLIENT-SIDE MULTI-PAGE PDF GENERATOR
+  // ─────────────────────────────────────────────
+  function ensureJpegDataUrl(dataUrl, w, h) {
+    return new Promise((resolve) => {
+      if (dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/jpeg')) {
+        resolve(dataUrl);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = w || img.naturalWidth || 1200;
+        c.height = h || img.naturalHeight || 800;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.94));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  }
+
+  function buildClientPdfBlob(snapshots) {
+    const chunks = [];
+    const offsets = [];
+    let pos = 0;
+    let objCount = 0;
+
+    function stringToLatin1Bytes(str) {
+      const len = str.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = str.charCodeAt(i) & 0xff;
+      }
+      return bytes;
+    }
+
+    function base64ToUint8Array(base64) {
+      const binaryString = window.atob(base64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      return bytes;
+    }
+
+    function pushString(str) {
+      const bytes = stringToLatin1Bytes(str);
+      chunks.push(bytes);
+      pos += bytes.length;
+    }
+
+    function pushBytes(bytes) {
+      chunks.push(bytes);
+      pos += bytes.length;
+    }
+
+    function registerObj() {
+      objCount++;
+      offsets[objCount] = pos;
+      pushString(`${objCount} 0 obj\n`);
+      return objCount;
+    }
+
+    function endObj() {
+      pushString('\nendobj\n');
+    }
+
+    // 1. PDF Header (Standard %PDF-1.4 binary marker)
+    pushString('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n');
+
+    const numPages = snapshots.length;
+    const pageObjNums = [];
+    for (let i = 0; i < numPages; i++) {
+      pageObjNums.push(3 + 3 * i + 2);
+    }
+
+    // Obj 1: Catalog
+    offsets[1] = pos;
+    pushString(`1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`);
+
+    // Obj 2: Pages
+    offsets[2] = pos;
+    const kidsStr = pageObjNums.map(n => `${n} 0 R`).join(' ');
+    pushString(`2 0 obj\n<< /Type /Pages /Kids [${kidsStr}] /Count ${numPages} >>\nendobj\n`);
+
+    // Output each page (Image XObject -> Content Stream -> Page Object)
+    objCount = 2;
+    for (let i = 0; i < numPages; i++) {
+      const snap = snapshots[i];
+      const b64 = (snap.dataUrl || '').replace(/^data:image\/[a-z]+;base64,/, '');
+      const imgBytes = base64ToUint8Array(b64);
+      const imgW = snap.w || 1200;
+      const imgH = snap.h || 800;
+
+      // Convert pixels to 72 dpi PDF points
+      const ptW = Math.round(imgW * 72 / 96);
+      const ptH = Math.round(imgH * 72 / 96);
+
+      // Image XObject
+      const imgObj = registerObj();
+      pushString(`<< /Type /XObject /Subtype /Image /Width ${imgW} /Height ${imgH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>\nstream\n`);
+      pushBytes(imgBytes);
+      pushString('\nendstream');
+      endObj();
+
+      // Content stream
+      const cs = `q ${ptW} 0 0 ${ptH} 0 0 cm /Im1 Do Q`;
+      const csObj = registerObj();
+      pushString(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`);
+      endObj();
+
+      // Page Object
+      const pageObj = registerObj();
+      pushString(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${ptW} ${ptH}] /Contents ${csObj} 0 R /Resources << /XObject << /Im1 ${imgObj} 0 R >> >> >>`);
+      endObj();
+    }
+
+    // XRef Table
+    const xrefPos = pos;
+    pushString(`xref\n0 ${objCount + 1}\n`);
+    pushString('0000000000 65535 f \n');
+    for (let i = 1; i <= objCount; i++) {
+      const off = String(offsets[i]).padStart(10, '0');
+      pushString(`${off} 00000 n \n`);
+    }
+
+    // Trailer
+    pushString(`trailer\n<< /Size ${objCount + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`);
+
+    return new Blob(chunks, { type: 'application/pdf' });
+  }
+
+  // ─────────────────────────────────────────────
+  // EXPORT ALL PAGES AS PDF
+  // ─────────────────────────────────────────────
   async function exportPDF() {
-    showToast('Preparing pages…');
+    showToast('Preparing pages for PDF…');
     saveCurrent();
 
     const savedPage  = currentPage;
@@ -390,11 +707,18 @@ const App = (() => {
       if (pages[i].boardColorId && typeof Canvas !== 'undefined' && Canvas.setBoardColor) {
         Canvas.setBoardColor(pages[i].boardColorId);
       }
-      Canvas.loadPageState(pages[i].shapes, pages[i].drawData, pages[i].bgImage || null, pages[i].strokes || []);
+      Canvas.loadPageState(
+        pages[i].shapes,
+        pages[i].drawData,
+        pages[i].bgImage || null,
+        pages[i].strokes || [],
+        pages[i].history || [],
+        pages[i].redoStack || []
+      );
       // Wait for canvas to fully paint
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-      await new Promise(r => setTimeout(r, 150));
-      // Use JPEG (smaller, reliable in PDF)
+      await new Promise(r => setTimeout(r, 120));
+      // Use JPEG (smaller, reliable, 100% native in PDF)
       const dataUrl = Canvas.snapshotJpeg();
       snapshots.push({ dataUrl, w: W, h: H, label: pages[i].label });
     }
@@ -403,26 +727,44 @@ const App = (() => {
     if (pages[savedPage].boardColorId && typeof Canvas !== 'undefined' && Canvas.setBoardColor) {
       Canvas.setBoardColor(pages[savedPage].boardColorId);
     }
-    Canvas.loadPageState(pages[savedPage].shapes, pages[savedPage].drawData, pages[savedPage].bgImage || null, pages[savedPage].strokes || []);
+    Canvas.loadPageState(
+      pages[savedPage].shapes,
+      pages[savedPage].drawData,
+      pages[savedPage].bgImage || null,
+      pages[savedPage].strokes || [],
+      pages[savedPage].history || [],
+      pages[savedPage].redoStack || []
+    );
     currentPage = savedPage;
     renderPageTabs();
 
-    if (window.electronAPI) {
+    if (window.electronAPI && typeof window.electronAPI.savePdf === 'function') {
       showToast(`Building PDF…`);
       const r = await window.electronAPI.savePdf(snapshots, 'PiyushDhara MathBoard');
       if (r && r.success) {
         showToast(`✓ PDF saved — ${r.pageCount} page(s)`);
       } else {
-        showToast('PDF export failed or cancelled');
+        showToast('PDF export cancelled');
       }
     } else {
-      snapshots.forEach((snap, i) => {
-        const a = document.createElement('a');
-        a.download = `MathBoard-Page${i+1}.jpg`;
-        a.href = snap.dataUrl;
-        a.click();
-      });
-      showToast(`Downloaded ${snapshots.length} page(s)`);
+      showToast(`Converting ${snapshots.length} page(s) into PDF…`);
+      try {
+        for (let i = 0; i < snapshots.length; i++) {
+          snapshots[i].dataUrl = await ensureJpegDataUrl(snapshots[i].dataUrl, snapshots[i].w, snapshots[i].h);
+        }
+        const pdfBlob = buildClientPdfBlob(snapshots);
+        pendingPdfBlob = pdfBlob;
+        const now = new Date();
+        const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+        pendingPdfFilename = `PiyushDhara-Board-${stamp}.pdf`;
+
+        // Display download modal for a trusted 1-click download with real .pdf filename
+        openPdfModal(snapshots.length, pendingPdfFilename, pdfBlob.size);
+        showToast(`✓ PDF Ready (${snapshots.length} pages) — Click Download PDF`);
+      } catch (err) {
+        console.error('PDF generation error:', err);
+        showToast('❌ PDF export error: ' + err.message);
+      }
     }
   }
 
@@ -434,11 +776,50 @@ const App = (() => {
     if (window.electronAPI) {
       const r = await window.electronAPI.saveSnapshot(dataUrl);
       if (r.success) showToast('Saved: ' + r.filePath);
-    } else {
+      return;
+    }
+
+    const filename = `MathBoard-Page${currentPage + 1}-${Date.now()}.png`;
+    try {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      if (typeof window.showSaveFilePicker === 'function') {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: 'PNG Image (*.png)',
+              accept: { 'image/png': ['.png'] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          showToast(`✓ Saved: ${handle.name || filename}`);
+          return;
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+        }
+      }
       const a = document.createElement('a');
-      a.download = `MathBoard-${Date.now()}.png`;
-      a.href = dataUrl;
+      a.download = filename;
+      const blobUrl = URL.createObjectURL(blob);
+      a.href = blobUrl;
+      document.body.appendChild(a);
       a.click();
+      setTimeout(() => {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }, 10000);
+      showToast(`✓ Snapshot saved as ${filename}`);
+    } catch (e) {
+      const a = document.createElement('a');
+      a.download = filename;
+      a.href = dataUrl;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 10000);
+      showToast(`✓ Snapshot saved`);
     }
   }
 
@@ -446,35 +827,66 @@ const App = (() => {
   // SAVE / LOAD / CLEAR
   // ─────────────────────────────────────────────
 
-  // Save board — first save opens dialog, subsequent saves go to same file
+  function restoreBoardState(data, fileName) {
+    if (!data) return;
+    pages = (data.pages || [{ id:1, label:'Page 1', shapes:[], drawData:null, drawDataUrl:null }]).map(pg => ({
+      ...pg,
+      drawData: null,
+      history: [],
+      redoStack: []
+    }));
+    currentPage = data.currentPage || 0;
+    if (currentPage >= pages.length) currentPage = 0;
+    loadCurrent();
+    if (data.chapter) selectChapter(data.chapter);
+    const savedSubject = data.subject || 'mathematics';
+    if (savedSubject !== activeSubject) {
+      switchSubject(savedSubject);
+    }
+    if (fileName) {
+      lastSaveName = fileName;
+      pages[currentPage].label = fileName.replace(/\.(mbp|json)$/i, '');
+    }
+    renderPageTabs();
+    showToast(`✓ Loaded "${fileName || 'Board Session'}"`);
+  }
+
+  // Save board — clean state (strip redundant canvas history buffers to keep file light)
   async function saveBoard({ forceDialog = false } = {}) {
     saveCurrent();
+    const cleanPages = pages.map(pg => ({
+      id: pg.id,
+      label: pg.label,
+      shapes: pg.shapes ? JSON.parse(JSON.stringify(pg.shapes)) : [],
+      strokes: pg.strokes ? JSON.parse(JSON.stringify(pg.strokes)) : [],
+      drawDataUrl: pg.drawDataUrl || null,
+      bgImage: pg.bgImage || null,
+      boardColorId: pg.boardColorId || null
+      // Redundant undo/redo history snapshots omitted: reduces file size from 130MB to <200KB!
+    }));
+
     const state = {
-      pages, currentPage,
+      pages: cleanPages,
+      currentPage,
       chapter: activeChapter,
-      subject: activeSubject,    // ── Curriculum metadata ──
+      subject: activeSubject,
       savedAt: new Date().toISOString()
     };
 
-
     if (window.electronAPI) {
-      // If we already have a path and not forcing dialog, save silently
       const savePath = (!forceDialog && lastSavePath) ? lastSavePath : null;
       const defaultName = lastSaveName || pages[currentPage].label || 'MathBoard';
 
       const r = await window.electronAPI.saveBoard(state, defaultName, savePath);
       if (!r.success) { showToast('Save cancelled'); return; }
 
-      // ── remember where we saved ──
       lastSavePath   = r.filePath;
       lastSaveFolder = r.filePath.substring(0, r.filePath.lastIndexOf('\\') || r.filePath.lastIndexOf('/'));
       lastSaveName   = r.fileName;
 
-      // ── rename the current page tab to the file name ──
       pages[currentPage].label = r.fileName;
       renderPageTabs();
 
-      // ── toast with Open Folder button ──
       showToastWithAction(
         `✓ Saved as "${r.fileName}"`,
         'Open Folder',
@@ -482,11 +894,48 @@ const App = (() => {
       );
 
     } else {
-      // Browser fallback — download as JSON
+      // Browser fallback — lightweight session file (.mbp)
+      const now = new Date();
+      const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+      const defaultName = lastSaveName || `MathBoard-${stamp}.mbp`;
+      const jsonStr = JSON.stringify(state);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+
+      if (typeof window.showSaveFilePicker === 'function') {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: defaultName,
+            types: [{
+              description: 'PiyushDhara Board Session (*.mbp, *.json)',
+              accept: { 'application/json': ['.mbp', '.json'] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          lastSaveName = handle.name || defaultName;
+          pages[currentPage].label = lastSaveName.replace(/\.(mbp|json)$/i, '');
+          renderPageTabs();
+          showToast(`✓ Saved: "${handle.name || defaultName}"`);
+          return;
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+          console.warn('showSaveFilePicker failed, falling back to download:', err);
+        }
+      }
+
+      // Direct anchor download
       const a = document.createElement('a');
-      a.download = `MathBoard-${Date.now()}.json`;
-      a.href = URL.createObjectURL(new Blob([JSON.stringify(state)], {type:'application/json'}));
+      a.download = defaultName;
+      const blobUrl = URL.createObjectURL(blob);
+      a.href = blobUrl;
+      document.body.appendChild(a);
       a.click();
+      setTimeout(() => {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }, 10000);
+      showToast(`✓ Saved as ${defaultName}`);
     }
   }
 
@@ -495,105 +944,62 @@ const App = (() => {
     await saveBoard({ forceDialog: true });
   }
 
-  // Load board — opens file dialog from last known folder
+  // Load board — works seamlessly in both Electron and Browser
   async function loadBoard() {
-    if (!window.electronAPI) return;
-    const r = await window.electronAPI.loadBoard(lastSaveFolder || null);
-    if (!r.success || !r.data) { showToast('Load cancelled'); return; }
-
-    // ── restore state, nulling out drawData so loadCurrent uses drawDataUrl ──
-    pages = (r.data.pages || [{ id:1, label:'Page 1', shapes:[], drawData:null, drawDataUrl:null }]).map(pg => ({
-      ...pg,
-      drawData: null,  // ImageData can't survive JSON — restore from drawDataUrl instead
-    }));
-    currentPage = r.data.currentPage || 0;
-    if (currentPage >= pages.length) currentPage = 0;
-    loadCurrent();
-    if (r.data.chapter) selectChapter(r.data.chapter);
-    // ── Restore curriculum state (backward compat: defaults to math) ──
-    const savedSubject = r.data.subject || 'mathematics';
-    if (savedSubject !== activeSubject) {
-      switchSubject(savedSubject);
+    if (window.electronAPI) {
+      const r = await window.electronAPI.loadBoard(lastSaveFolder || null);
+      if (!r.success || !r.data) { showToast('Load cancelled'); return; }
+      lastSavePath   = r.filePath;
+      lastSaveFolder = r.folder;
+      restoreBoardState(r.data, r.fileName);
+      return;
     }
-    renderPageTabs();
 
+    // Browser mode
+    if (typeof window.showOpenFilePicker === 'function') {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          types: [{
+            description: 'PiyushDhara Board Session (*.mbp, *.json)',
+            accept: { 'application/json': ['.mbp', '.json'] }
+          }]
+        });
+        const file = await handle.getFile();
+        const text = await file.text();
+        const data = JSON.parse(text);
+        restoreBoardState(data, file.name);
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+        console.warn('showOpenFilePicker error, using input fallback:', err);
+      }
+    }
 
-    // ── remember this file for re-save ──
-    lastSavePath   = r.filePath;
-    lastSaveFolder = r.folder;
-    lastSaveName   = r.fileName;
-
-    // ── rename page tab to match loaded file ──
-    pages[currentPage].label = r.fileName;
-    renderPageTabs();
-
-    showToast(`✓ Opened "${r.fileName}"`);
+    let input = document.getElementById('board-session-file-input');
+    if (!input) {
+      input = document.createElement('input');
+      input.type = 'file';
+      input.id = 'board-session-file-input';
+      input.accept = '.mbp,.json,application/json';
+      input.style.display = 'none';
+      document.body.appendChild(input);
+      input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+          restoreBoardState(data, file.name);
+        } catch (err) {
+          showToast('❌ Invalid session file');
+        }
+        input.value = '';
+      };
+    }
+    input.click();
   }
 
-  function clearBoard() {
-    // Custom SmartBoard Touch Confirmation Dialog
-    const existing = document.getElementById('sb-confirm-dialog');
-    if (existing) existing.remove();
 
-    const overlay = document.createElement('div');
-    overlay.id = 'sb-confirm-dialog';
-    overlay.style.cssText = `
-      position: fixed; inset: 0; z-index: 99999;
-      background: rgba(5, 11, 23, 0.75);
-      backdrop-filter: blur(8px);
-      display: flex; align-items: center; justify-content: center;
-      touch-action: manipulation; user-select: none;
-    `;
-
-    const card = document.createElement('div');
-    card.style.cssText = `
-      background: #0d1b38;
-      border: 2px solid #c9a84c;
-      border-radius: 18px;
-      padding: 28px 32px;
-      max-width: 440px;
-      width: 90%;
-      box-shadow: 0 16px 48px rgba(0,0,0,0.7), 0 0 24px rgba(201,168,76,0.25);
-      text-align: center;
-      display: flex; flex-direction: column; align-items: center; gap: 16px;
-    `;
-
-    card.innerHTML = `
-      <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(239,68,68,0.18); border: 2px solid #ef4444; display: flex; align-items: center; justify-content: center; color: #f87171; font-size: 26px;">
-        ⚠️
-      </div>
-      <div style="font-size: 19px; font-weight: 700; color: #ffffff; font-family: 'Segoe UI', system-ui, sans-serif;">
-        Clear Current Board?
-      </div>
-      <div style="font-size: 14px; color: rgba(255,255,255,0.7); line-height: 1.5;">
-        This will erase all pen strokes and shapes on this page. This action cannot be undone.
-      </div>
-      <div style="display: flex; gap: 14px; width: 100%; margin-top: 8px;">
-        <button id="sb-clear-cancel" style="flex: 1; min-height: 48px; border-radius: 12px; background: rgba(255,255,255,0.08); border: 1.5px solid rgba(255,255,255,0.2); color: #ffffff; font-size: 15px; font-weight: 600; cursor: pointer;">
-          Cancel
-        </button>
-        <button id="sb-clear-confirm" style="flex: 1.2; min-height: 48px; border-radius: 12px; background: linear-gradient(135deg, #dc2626, #b91c1c); border: 1.5px solid #ef4444; color: #ffffff; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 16px rgba(220,38,38,0.4);">
-          Clear Board
-        </button>
-      </div>
-    `;
-
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-
-    overlay.querySelector('#sb-clear-cancel').onclick = () => overlay.remove();
-    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-    overlay.querySelector('#sb-clear-confirm').onclick = () => {
-      overlay.remove();
-      Canvas.clearAll();
-      pages[currentPage].shapes   = [];
-      pages[currentPage].drawData = null;
-      if (window.PhysicsLab && typeof PhysicsLab.clearAnnotations === 'function') PhysicsLab.clearAnnotations();
-      if (window.MathVisualizer && typeof MathVisualizer.clearAnnotations === 'function') MathVisualizer.clearAnnotations();
-      if (window.GraphEngine && typeof GraphEngine.clearAnnotations === 'function') GraphEngine.clearAnnotations();
-      showToast('Board cleared');
-    };
-  }
 
   // ─────────────────────────────────────────────
   // TOAST (plain) + TOAST WITH ACTION BUTTON — SmartBoard enlarged
@@ -684,6 +1090,7 @@ const App = (() => {
       if (typeof Canvas !== 'undefined' && Canvas.resize) {
         Canvas.resize();
       }
+      updatePageControls();
     }, 80);
   }
 
@@ -707,11 +1114,55 @@ const App = (() => {
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     if (e.ctrlKey || e.metaKey) {
+      const key = e.key.toLowerCase();
+      if (e.shiftKey && key === 'n') {
+        e.preventDefault();
+        addPage();
+        return;
+      }
+      if (key === 'c') {
+        if (typeof BoardClipboard !== 'undefined' && BoardClipboard.hasSelection()) {
+          e.preventDefault();
+          BoardClipboard.copy();
+          return;
+        }
+      }
+      if (key === 'v') {
+        if (typeof BoardClipboard !== 'undefined' && BoardClipboard.hasClipboardData()) {
+          e.preventDefault();
+          BoardClipboard.paste();
+          return;
+        }
+      }
+      if (key === 'x') {
+        if (typeof BoardClipboard !== 'undefined' && BoardClipboard.hasSelection()) {
+          e.preventDefault();
+          BoardClipboard.cut();
+          return;
+        }
+      }
+      if (key === 'd') {
+        if (typeof BoardClipboard !== 'undefined' && BoardClipboard.hasSelection()) {
+          e.preventDefault();
+          BoardClipboard.duplicate();
+          return;
+        }
+      }
       if (e.key === 'z') { e.preventDefault(); undo(); }
       if (e.key === 'y') { e.preventDefault(); redo(); }
       if (e.key === 's') { e.preventDefault(); saveBoard(); }
       if (e.key === '[' || e.key === '-') { e.preventDefault(); Canvas.adjustFontSize(-2); }
       if (e.key === ']' || e.key === '=' || e.key === '+') { e.preventDefault(); Canvas.adjustFontSize(2); }
+      return;
+    }
+    if (e.key === 'PageUp') {
+      e.preventDefault();
+      prevPage();
+      return;
+    }
+    if (e.key === 'PageDown') {
+      e.preventDefault();
+      nextPage();
       return;
     }
     if (e.key === '[' || e.key === '-') { Canvas.adjustFontSize(-2); return; }
@@ -724,6 +1175,19 @@ const App = (() => {
     if (map[e.key]) setTool(map[e.key]);
     if (e.key === 'i' || e.key === 'I') { if (typeof ImageTool !== 'undefined') ImageTool.openPicker(); }
     if (e.key === 'Escape') {
+      const clearModal = $('fs-clear-modal');
+      if (clearModal && !clearModal.classList.contains('hidden')) {
+        closeClearModal();
+        return;
+      }
+      const pdfModal = $('pdf-ready-modal');
+      if (pdfModal && !pdfModal.classList.contains('hidden')) {
+        closePdfModal();
+        return;
+      }
+      if (typeof BoardClipboard !== 'undefined' && BoardClipboard.clearSelection) {
+        BoardClipboard.clearSelection();
+      }
       if (typeof UI !== 'undefined' && UI.isChapterPanelOpen && UI.isChapterPanelOpen()) {
         UI.closeChapterPanel();
         return;
@@ -731,7 +1195,14 @@ const App = (() => {
       setTool('select');
       Canvas.deselectAll();
     }
-    if (e.key === 'Delete' || e.key === 'Backspace') Canvas.deleteShape();
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (typeof BoardClipboard !== 'undefined' && BoardClipboard.hasSelection()) {
+        e.preventDefault();
+        BoardClipboard.deleteSelected();
+        return;
+      }
+      Canvas.deleteShape();
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -839,7 +1310,10 @@ const App = (() => {
     selectChapter, switchSubject,
     toggleSidebar, toggleRPanel,
     addPage, switchPage, deletePage,
-    prevPage, nextPage,
+    prevPage, nextPage, updatePageControls,
+    confirmClearCurrentPage, closeClearModal, executeClearCurrentPage,
+    openPdfModal, closePdfModal, downloadGeneratedPdf,
+    getPages: () => pages, getCurrentPage: () => currentPage,
     toggleRecord, takeSnapshot, exportPDF,
     saveBoard, saveBoardAs, loadBoard, clearBoard,
     saveCurrent, getBoardState, loadBoardState,

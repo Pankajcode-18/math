@@ -40,12 +40,26 @@ const PhysicsLab = (() => {
     { id: 'thermodynamics', name: '🔥 Kinetic Gas & PV=nRT', category: 'Thermodynamics' }
   ];
 
+  // CELESTIAL BODIES WITH ACCURATE SCIENTIFIC GRAVITY
+  const CELESTIAL_BODIES = {
+    earth:   { id: 'earth',   name: 'Earth',   icon: '🌍', g: 9.81,  color: '#38bdf8', desc: 'Terrestrial reference baseline (9.81 m/s²)' },
+    moon:    { id: 'moon',    name: 'Moon',    icon: '🌙', g: 1.62,  color: '#facc15', desc: 'Low gravity → Airborne 6× longer, reaches 6× higher maximum height' },
+    mars:    { id: 'mars',    name: 'Mars',    icon: '🔴', g: 3.71,  color: '#fb923c', desc: 'Moderate gravity (~38% of Earth) → Extended arc & range' },
+    jupiter: { id: 'jupiter', name: 'Jupiter', icon: '🪐', g: 24.79, color: '#f43f5e', desc: 'Crushing gravity → Projectile drops rapidly with small arc' },
+    mercury: { id: 'mercury', name: 'Mercury', icon: '☿',  g: 3.70,  color: '#c084fc', desc: 'Low gravity (~38% of Earth) → High parabolic trajectory' },
+    venus:   { id: 'venus',   name: 'Venus',   icon: '♀',  g: 8.87,  color: '#34d399', desc: 'Near-Earth gravity (~90% of Earth) → Slightly higher arc than Earth' }
+  };
+
   // 1. PROJECTILE STATE
   const projectile = {
     angle: 45, // degrees
-    v0: 28, // m/s
+    v0: 25, // m/s
     h0: 0, // launch height (m)
-    gravity: 9.8, // m/s²
+    gravity: 9.81, // m/s²
+    selectedBody: 'earth',
+    compareMode: false,
+    comparedBodies: ['earth', 'moon', 'jupiter'],
+    compareSims: {}, // dynamic multi-body simulation states
     airDrag: false, // air resistance
     dragCoeff: 0.018,
     x: 0,
@@ -58,8 +72,8 @@ const PhysicsLab = (() => {
     range: 0,
     flightT: 0,
     landed: false,
-    scale: 6.5, // pixels per meter
-    originX: 70,
+    scale: 6.5, // pixels per meter (auto-scaled dynamically)
+    originX: 80,
     originY: 0
   };
 
@@ -722,39 +736,147 @@ const PhysicsLab = (() => {
       /* Planet Preset Cards */
       .phys-planet-grid {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 4px;
-        margin-top: 2px;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 5px;
+        margin-top: 4px;
       }
       .phys-planet-btn {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 1px;
-        padding: 5px 2px 4px;
+        gap: 2px;
+        min-height: 48px;
+        padding: 6px 4px 5px;
         background: rgba(255, 255, 255, 0.04);
         border: 1px solid rgba(255, 255, 255, 0.09);
-        border-radius: 8px;
+        border-radius: 9px;
         cursor: pointer;
         transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
         touch-action: manipulation;
       }
       .phys-planet-btn:hover {
-        background: rgba(56, 189, 248, 0.12);
-        border-color: rgba(56, 189, 248, 0.4);
+        background: rgba(56, 189, 248, 0.14);
+        border-color: rgba(56, 189, 248, 0.45);
         transform: translateY(-1px);
       }
       .phys-planet-btn.active {
-        background: linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(129, 140, 248, 0.2));
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.28), rgba(129, 140, 248, 0.22));
         border-color: #38bdf8;
-        box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
         transform: translateY(-1px);
       }
-      .phys-planet-btn .p-icon { font-size: 13px; }
-      .phys-planet-btn .p-name { font-size: 9px; font-weight: 700; color: #f8fafc; }
-      .phys-planet-btn .p-g { font-size: 7.5px; font-family: monospace; color: #94a3b8; }
-      .phys-planet-btn.active .p-g { color: #7dd3fc; font-weight: 600; }
+      .phys-planet-btn .p-icon { font-size: 16px; }
+      .phys-planet-btn .p-name { font-size: 10.5px; font-weight: 700; color: #f8fafc; }
+      .phys-planet-btn .p-g { font-size: 8.5px; font-family: monospace; color: #94a3b8; }
+      .phys-planet-btn.active .p-g { color: #7dd3fc; font-weight: 700; }
+
+      /* Quick Ground / Platform Buttons */
+      .phys-quick-btn {
+        flex: 1;
+        min-height: 38px;
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.05);
+        color: #cbd5e1;
+        transition: all 0.15s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        touch-action: manipulation;
+      }
+      .phys-quick-btn:hover {
+        background: rgba(255, 255, 255, 0.12);
+        color: #ffffff;
+        border-color: rgba(255, 255, 255, 0.22);
+      }
+      .phys-quick-btn.active {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.24), rgba(5, 150, 105, 0.2));
+        border-color: #10b981;
+        color: #6ee7b7;
+        box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+      }
+
+      /* Multi-Body Comparison UI */
+      .phys-compare-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-top: 4px;
+      }
+      .phys-compare-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 9px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: #94a3b8;
+        font-size: 10.5px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.14s ease;
+        user-select: none;
+        touch-action: manipulation;
+      }
+      .phys-compare-chip:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #f1f5f9;
+      }
+      .phys-compare-chip.active {
+        background: rgba(56, 189, 248, 0.16);
+        border-color: rgba(56, 189, 248, 0.5);
+        color: #38bdf8;
+        box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+      }
+
+      .phys-compare-table-wrap {
+        margin-top: 4px;
+        overflow-x: auto;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .phys-compare-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10px;
+        text-align: left;
+      }
+      .phys-compare-table th {
+        background: rgba(15, 23, 42, 0.85);
+        color: #94a3b8;
+        padding: 5px 6px;
+        font-weight: 700;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .phys-compare-table td {
+        padding: 5px 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        color: #cbd5e1;
+        font-family: 'Cascadia Code', monospace;
+      }
+      .phys-compare-table tr:hover td {
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .phys-insight-card {
+        padding: 8px 10px;
+        border-radius: 9px;
+        background: rgba(30, 41, 59, 0.4);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        font-size: 10px;
+        line-height: 1.5;
+        color: #cbd5e1;
+      }
+      .phys-insight-card b {
+        color: #38bdf8;
+      }
 
       /* iOS Toggle Switch */
       .phys-toggle-row {
@@ -968,8 +1090,8 @@ const PhysicsLab = (() => {
     const W = canvas.width, H = canvas.height;
 
     if (activeSim === 'projectile') {
-      const originX = 80;
-      const groundY = H - 90;
+      const originX = projectile.originX || 80;
+      const groundY = Math.round(H - Math.max(120, H * 0.16));
       const platH = projectile.h0 * projectile.scale;
       const cx = originX;
       const cy = groundY - platH;
@@ -1055,8 +1177,8 @@ const PhysicsLab = (() => {
     physDragLast = { x: pos.x, y: pos.y };
 
     if (physDragTarget === 'projectile') {
-      const originX = 80;
-      const groundY = H - 90;
+      const originX = projectile.originX || 80;
+      const groundY = Math.round(H - Math.max(120, H * 0.16));
       const platH = projectile.h0 * projectile.scale;
       aimProjectile(pos.x, pos.y, originX, groundY - platH);
     } else if (physDragTarget === 'pendulum') {
@@ -1214,27 +1336,91 @@ const PhysicsLab = (() => {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // RESET SIMULATIONS
+  // RESET SIMULATIONS & VIEWPORT AUTO-SCALING
   // ─────────────────────────────────────────────────────────────
+  function updateProjectileScale() {
+    if (!canvas) return;
+    const W = canvas.width || 1200;
+    const H = canvas.height || 700;
+    const groundY = Math.round(H - Math.max(120, H * 0.16));
+    const originX = projectile.originX || 80;
+
+    let maxNeedH = projectile.maxH || 20;
+    let maxNeedR = projectile.range || 50;
+
+    if (projectile.compareMode && projectile.compareSims) {
+      Object.values(projectile.compareSims).forEach(sim => {
+        if (sim.maxH > maxNeedH) maxNeedH = sim.maxH;
+        if (sim.range > maxNeedR) maxNeedR = sim.range;
+      });
+    }
+
+    const availW = Math.max(200, W - originX - 90);
+    const availH = Math.max(150, groundY - 70);
+    const scX = availW / Math.max(maxNeedR * 1.08, 20);
+    const scY = availH / Math.max(maxNeedH * 1.18, 15);
+    projectile.scale = Math.max(1.1, Math.min(scX, scY, 12.0));
+  }
+
   function resetSimulation() {
     simTime = 0;
     if (activeSim === 'projectile') {
       const rad = (projectile.angle * Math.PI) / 180;
+      const v0x = projectile.v0 * Math.cos(rad);
+      const v0y = projectile.v0 * Math.sin(rad);
+
       projectile.x = 0;
       projectile.y = projectile.h0;
-      projectile.vx = projectile.v0 * Math.cos(rad);
-      projectile.vy = projectile.v0 * Math.sin(rad);
+      projectile.vx = v0x;
+      projectile.vy = v0y;
       projectile.trail = [];
       projectile.t = 0;
       projectile.landed = false;
-      // Analytical max height and range
-      const vy0 = projectile.v0 * Math.sin(rad);
+
+      // Analytical max height and range for primary body
       const g = projectile.gravity;
-      projectile.maxH = projectile.h0 + (vy0 * vy0) / (2 * g);
-      const tPeak = vy0 / g;
+      projectile.maxH = projectile.h0 + (v0y * v0y) / (2 * g);
+      const tPeak = v0y / g;
       const tFall = Math.sqrt((2 * projectile.maxH) / g);
       projectile.flightT = tPeak + tFall;
-      projectile.range = projectile.vx * projectile.flightT;
+      projectile.range = v0x * projectile.flightT;
+
+      // Multi-body comparison states
+      projectile.compareSims = {};
+      const activeBodies = projectile.compareMode
+        ? (projectile.comparedBodies.length > 0 ? projectile.comparedBodies : ['earth'])
+        : [projectile.selectedBody || 'earth'];
+
+      activeBodies.forEach(bId => {
+        const bInfo = CELESTIAL_BODIES[bId] || { name: bId, icon: '🪐', g: projectile.gravity, color: '#38bdf8' };
+        const bg = bInfo.g;
+        const bMaxH = projectile.h0 + (v0y * v0y) / (2 * bg);
+        const bTPeak = v0y / bg;
+        const bTFall = Math.sqrt((2 * bMaxH) / bg);
+        const bFlightT = bTPeak + bTFall;
+        const bRange = v0x * bFlightT;
+
+        projectile.compareSims[bId] = {
+          id: bId,
+          name: bInfo.name,
+          icon: bInfo.icon,
+          g: bg,
+          color: bInfo.color,
+          desc: bInfo.desc,
+          x: 0,
+          y: projectile.h0,
+          vx: v0x,
+          vy: v0y,
+          t: 0,
+          trail: [],
+          landed: false,
+          maxH: bMaxH,
+          flightT: bFlightT,
+          range: bRange
+        };
+      });
+
+      updateProjectileScale();
     } else if (activeSim === 'pendulum') {
       pendulum.theta = (pendulum.theta0 * Math.PI) / 180;
       pendulum.omega = 0;
@@ -1274,7 +1460,98 @@ const PhysicsLab = (() => {
     sb.innerHTML = '';
 
     if (activeSim === 'projectile') {
+      const isCmp = projectile.compareMode;
+      const bodies = CELESTIAL_BODIES;
+      const curBody = bodies[projectile.selectedBody] || bodies.earth;
+
+      // Build Comparison Table Rows if compareMode is active
+      let compareTableHtml = '';
+      if (isCmp) {
+        const rows = (projectile.comparedBodies || []).map(bId => {
+          const sim = (projectile.compareSims && projectile.compareSims[bId]) || {
+            icon: bodies[bId].icon,
+            name: bodies[bId].name,
+            g: bodies[bId].g,
+            color: bodies[bId].color,
+            maxH: 0,
+            range: 0,
+            flightT: 0
+          };
+          return `
+            <tr>
+              <td style="font-weight:700;color:${sim.color};white-space:nowrap;">${sim.icon} ${sim.name}</td>
+              <td style="color:#94a3b8;">${sim.g}</td>
+              <td style="color:#f43f5e;font-weight:700;">${sim.maxH.toFixed(1)}m</td>
+              <td style="color:#4ade80;font-weight:700;">${sim.range.toFixed(1)}m</td>
+              <td style="color:#fbbf24;font-weight:700;">${sim.flightT.toFixed(1)}s</td>
+            </tr>
+          `;
+        }).join('');
+
+        compareTableHtml = `
+          <div class="phys-ctrl-group">
+            <div class="phys-ctrl-title">
+              <span><span class="title-icon">📊</span> Trajectory Data Comparison</span>
+              <span style="font-size:9.5px;color:#facc15;background:rgba(250,204,21,0.14);padding:2px 7px;border-radius:6px;border:1px solid rgba(250,204,21,0.3);font-weight:700;">MULTI-BODY</span>
+            </div>
+            <div class="phys-compare-table-wrap">
+              <table class="phys-compare-table">
+                <thead>
+                  <tr>
+                    <th>Body</th>
+                    <th>g (m/s²)</th>
+                    <th>Max Height</th>
+                    <th>Range</th>
+                    <th>Flight Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows}
+                </tbody>
+              </table>
+            </div>
+            <div class="phys-insight-card">
+              <div style="font-weight:700;color:#f8fafc;margin-bottom:3px;display:flex;align-items:center;gap:4px;">
+                <span>💡</span> Comparative Physics Insight
+              </div>
+              <div>
+                <b>Moon (1.62 m/s²):</b> Lower gravity causes the projectile to stay airborne <b>~6× longer</b> and reach a much higher maximum height.<br>
+                <b>Jupiter (24.79 m/s²):</b> Crushing gravity accelerates the projectile downward rapidly, resulting in a lower maximum height and shorter range.
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      // Planet chips for Compare Mode
+      const compareChipsHtml = Object.keys(bodies).map(k => {
+        const b = bodies[k];
+        const isChecked = (projectile.comparedBodies || []).includes(k);
+        return `
+          <div class="phys-compare-chip ${isChecked ? 'active' : ''}" onclick="PhysicsLab.toggleComparedBody('${k}')" title="${b.desc}">
+            <span>${isChecked ? '☑' : '☐'}</span>
+            <span>${b.icon}</span>
+            <span>${b.name}</span>
+            <span style="font-size:8.5px;opacity:0.75;font-family:monospace;">${b.g}</span>
+          </div>
+        `;
+      }).join('');
+
+      // Planet grid buttons for Single Body Mode
+      const planetGridHtml = Object.keys(bodies).map(k => {
+        const b = bodies[k];
+        const isActive = (projectile.selectedBody === k) || (Math.abs(projectile.gravity - b.g) < 0.05);
+        return `
+          <button type="button" class="phys-planet-btn ${isActive ? 'active' : ''}" id="btn-planet-${k}" onclick="PhysicsLab.setProjPreset('${k}')" title="${b.desc}">
+            <span class="p-icon">${b.icon}</span>
+            <span class="p-name">${b.name}</span>
+            <span class="p-g">${b.g} m/s²</span>
+          </button>
+        `;
+      }).join('');
+
       sb.innerHTML = `
+        <!-- 1. LAUNCH PARAMETERS & ELEVATION -->
         <div class="phys-ctrl-group">
           <div class="phys-ctrl-title">
             <span><span class="title-icon">🚀</span> Launch Parameters</span>
@@ -1291,7 +1568,7 @@ const PhysicsLab = (() => {
 
           <div class="phys-slider-row">
             <div class="phys-slider-head">
-              <span>Initial Speed (v₀)</span>
+              <span>Initial Velocity (v₀)</span>
               <span class="val" id="val-proj-v0">${projectile.v0} m/s</span>
             </div>
             <input type="range" class="phys-slider" id="ctrl-proj-v0" min="5" max="60" step="1" value="${projectile.v0}">
@@ -1304,57 +1581,103 @@ const PhysicsLab = (() => {
             </div>
             <input type="range" class="phys-slider" id="ctrl-proj-h0" min="0" max="40" step="1" value="${projectile.h0}">
           </div>
+
+          <!-- Ground & Platform Quick Controls (Easily Accessible, Raised Above Bottom) -->
+          <div style="display:flex;gap:6px;margin-top:2px;">
+            <button type="button" class="phys-quick-btn ${projectile.h0 === 0 ? 'active' : ''}" id="btn-proj-ground" onclick="PhysicsLab.setGroundLevel()" title="Set launch position directly on Ground (h₀ = 0m)">
+              🌱 Ground (0m)
+            </button>
+            <button type="button" class="phys-quick-btn ${projectile.h0 > 0 ? 'active' : ''}" id="btn-proj-platform" onclick="PhysicsLab.setPlatformLevel(15)" title="Elevate onto Launch Platform (h₀ = 15m)">
+              ⛰️ Elevated (15m)
+            </button>
+          </div>
         </div>
 
+        <!-- 2. CELESTIAL GRAVITY & COMPARISON -->
         <div class="phys-ctrl-group">
           <div class="phys-ctrl-title">
             <span><span class="title-icon">🪐</span> Celestial Gravity</span>
             <span style="font-size:9.5px;color:#a855f7;background:rgba(168,85,247,0.12);padding:2px 7px;border-radius:6px;border:1px solid rgba(168,85,247,0.25);font-weight:700;">FIELD</span>
           </div>
 
-          <div class="phys-slider-row">
-            <div class="phys-slider-head">
-              <span>Gravitational Accel (g)</span>
-              <span class="val" id="val-proj-g">${projectile.gravity} m/s²</span>
-            </div>
-            <input type="range" class="phys-slider" id="ctrl-proj-g" min="1.0" max="25" step="0.1" value="${projectile.gravity}">
-          </div>
-
-          <div class="phys-planet-grid">
-            <button class="phys-planet-btn ${Math.abs(projectile.gravity - 9.8) < 0.1 ? 'active' : ''}" id="btn-planet-earth" onclick="PhysicsLab.setProjPreset('earth')">
-              <span class="p-icon">🌍</span>
-              <span class="p-name">Earth</span>
-              <span class="p-g">9.8 m/s²</span>
-            </button>
-            <button class="phys-planet-btn ${Math.abs(projectile.gravity - 1.62) < 0.1 ? 'active' : ''}" id="btn-planet-moon" onclick="PhysicsLab.setProjPreset('moon')">
-              <span class="p-icon">🌕</span>
-              <span class="p-name">Moon</span>
-              <span class="p-g">1.6 m/s²</span>
-            </button>
-            <button class="phys-planet-btn ${Math.abs(projectile.gravity - 3.72) < 0.1 ? 'active' : ''}" id="btn-planet-mars" onclick="PhysicsLab.setProjPreset('mars')">
-              <span class="p-icon">🔴</span>
-              <span class="p-name">Mars</span>
-              <span class="p-g">3.7 m/s²</span>
-            </button>
-            <button class="phys-planet-btn ${Math.abs(projectile.gravity - 24.79) < 0.1 ? 'active' : ''}" id="btn-planet-jupiter" onclick="PhysicsLab.setProjPreset('jupiter')">
-              <span class="p-icon">🪐</span>
-              <span class="p-name">Jupiter</span>
-              <span class="p-g">24.8 m/s²</span>
-            </button>
-          </div>
-
-          <label class="phys-toggle-row">
+          <!-- Compare Mode Toggle -->
+          <label class="phys-toggle-row" style="margin-top:1px;">
             <div class="phys-toggle-text">
-              <div class="phys-toggle-title">Atmospheric Drag</div>
-              <div class="phys-toggle-desc">Quadratic Resistance (F_drag ∝ v²)</div>
+              <div class="phys-toggle-title" style="display:flex;align-items:center;gap:5px;">
+                <span>🌌</span> Compare Celestial Bodies
+              </div>
+              <div class="phys-toggle-desc">Display trajectories together on one screen</div>
             </div>
             <div class="phys-switch">
-              <input type="checkbox" id="ctrl-proj-drag" ${projectile.airDrag ? 'checked' : ''}>
+              <input type="checkbox" id="ctrl-proj-compare" ${isCmp ? 'checked' : ''} onchange="PhysicsLab.toggleCompareMode(this.checked)">
               <span class="phys-switch-slider"></span>
             </div>
           </label>
+
+          ${!isCmp ? `
+            <div class="phys-slider-row" style="margin-top:4px;">
+              <div class="phys-slider-head">
+                <span>Gravitational Accel (g)</span>
+                <span class="val" id="val-proj-g">${projectile.gravity} m/s²</span>
+              </div>
+              <input type="range" class="phys-slider" id="ctrl-proj-g" min="1.0" max="25" step="0.01" value="${projectile.gravity}">
+            </div>
+
+            <div class="phys-planet-grid">
+              ${planetGridHtml}
+            </div>
+
+            <label class="phys-toggle-row">
+              <div class="phys-toggle-text">
+                <div class="phys-toggle-title">Atmospheric Drag</div>
+                <div class="phys-toggle-desc">Air Resistance (F_drag ∝ v²)</div>
+              </div>
+              <div class="phys-switch">
+                <input type="checkbox" id="ctrl-proj-drag" ${projectile.airDrag ? 'checked' : ''}>
+                <span class="phys-switch-slider"></span>
+              </div>
+            </label>
+          ` : `
+            <div style="font-size:10.5px;color:#94a3b8;font-weight:600;margin-top:2px;">
+              Select bodies to compare:
+            </div>
+            <div class="phys-compare-chips">
+              ${compareChipsHtml}
+            </div>
+          `}
         </div>
 
+        ${compareTableHtml}
+
+        <!-- 3. PROJECTILE STATISTICS (In Single-Body Mode) -->
+        ${!isCmp ? `
+        <div class="phys-ctrl-group">
+          <div class="phys-ctrl-title">
+            <span><span class="title-icon">📈</span> Live Statistics</span>
+            <span style="font-size:9.5px;color:#38bdf8;background:rgba(56,189,248,0.12);padding:2px 7px;border-radius:6px;border:1px solid rgba(56,189,248,0.25);font-weight:700;">ANALYTICAL</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+            <div style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:6px 8px;">
+              <div style="font-size:9px;color:#94a3b8;font-weight:600;">Maximum Height</div>
+              <div style="font-size:14px;color:#f43f5e;font-weight:800;font-family:'Cascadia Code',monospace;" id="stat-proj-maxh">${projectile.maxH.toFixed(2)} m</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:6px 8px;">
+              <div style="font-size:9px;color:#94a3b8;font-weight:600;">Horizontal Range</div>
+              <div style="font-size:14px;color:#4ade80;font-weight:800;font-family:'Cascadia Code',monospace;" id="stat-proj-range">${projectile.range.toFixed(2)} m</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:6px 8px;">
+              <div style="font-size:9px;color:#94a3b8;font-weight:600;">Flight Time</div>
+              <div style="font-size:14px;color:#fbbf24;font-weight:800;font-family:'Cascadia Code',monospace;" id="stat-proj-time">${projectile.flightT.toFixed(2)} s</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:6px 8px;">
+              <div style="font-size:9px;color:#94a3b8;font-weight:600;">Gravity</div>
+              <div style="font-size:14px;color:#7dd3fc;font-weight:800;font-family:'Cascadia Code',monospace;">${projectile.gravity} m/s²</div>
+            </div>
+          </div>
+        </div>
+        ` : ''}
+
+        <!-- 4. LIVE KINEMATICS FORMULAS (Apex Replaced with Maximum Height) -->
         <div class="phys-ctrl-group">
           <div class="phys-ctrl-title">
             <span><span class="title-icon">📐</span> Kinematic Formulas</span>
@@ -1370,26 +1693,29 @@ const PhysicsLab = (() => {
               <span class="f-code" style="color:#c084fc;">vᵧ(t) = v₀ sin(θ) - gt</span>
             </div>
             <div class="phys-f-item">
-              <span class="f-tag">Max Trajectory Apex</span>
-              <span class="f-code" style="color:#f87171;">H_max = h₀ + v₀²sin²θ / 2g</span>
+              <span class="f-tag">Maximum Height</span>
+              <span class="f-code" style="color:#f87171;">H_max = h₀ + v₀²sin²θ / (2g)</span>
             </div>
             <div class="phys-f-item">
-              <span class="f-tag">Total Ground Range</span>
-              <span class="f-code" style="color:#4ade80;">R = (v₀² sin 2θ) / g</span>
+              <span class="f-tag">Horizontal Range</span>
+              <span class="f-code" style="color:#4ade80;">R = v₀ cos(θ) · T</span>
             </div>
             <div class="phys-f-item">
               <span class="f-tag">Total Flight Time</span>
-              <span class="f-code" style="color:#fbbf24;">T = 2 v₀ sin(θ) / g</span>
+              <span class="f-code" style="color:#fbbf24;">T = (v₀ sin θ + √(v₀²sin²θ + 2gh₀)) / g</span>
             </div>
           </div>
         </div>
       `;
+
       bindSlider('ctrl-proj-angle', 'val-proj-angle', '°', v => { projectile.angle = +v; resetSimulation(); });
       bindSlider('ctrl-proj-v0', 'val-proj-v0', ' m/s', v => { projectile.v0 = +v; resetSimulation(); });
       bindSlider('ctrl-proj-h0', 'val-proj-h0', ' m', v => { projectile.h0 = +v; resetSimulation(); });
-      bindSlider('ctrl-proj-g', 'val-proj-g', ' m/s²', v => { projectile.gravity = +v; resetSimulation(); });
-      const dragCb = document.getElementById('ctrl-proj-drag');
-      if (dragCb) dragCb.addEventListener('change', e => { projectile.airDrag = e.target.checked; resetSimulation(); });
+      if (!isCmp) {
+        bindSlider('ctrl-proj-g', 'val-proj-g', ' m/s²', v => { projectile.gravity = +v; resetSimulation(); });
+        const dragCb = document.getElementById('ctrl-proj-drag');
+        if (dragCb) dragCb.addEventListener('change', e => { projectile.airDrag = e.target.checked; resetSimulation(); });
+      }
 
     } else if (activeSim === 'pendulum') {
       sb.innerHTML = `
@@ -1737,25 +2063,80 @@ const PhysicsLab = (() => {
     });
   }
 
-  // Helper presets
-  function setProjPreset(name) {
-    if (name === 'earth') projectile.gravity = 9.8;
-    if (name === 'moon') projectile.gravity = 1.62;
-    if (name === 'mars') projectile.gravity = 3.72;
-    if (name === 'jupiter') projectile.gravity = 24.79;
+  // Helper presets & Ground controls
+  function setGroundLevel() {
+    projectile.h0 = 0;
+    const h0Slider = document.getElementById('ctrl-proj-h0');
+    const h0Val = document.getElementById('val-proj-h0');
+    if (h0Slider) {
+      h0Slider.value = 0;
+      updateSliderFill(h0Slider);
+    }
+    if (h0Val) h0Val.textContent = '0 m';
+    const btnG = document.getElementById('btn-proj-ground');
+    const btnP = document.getElementById('btn-proj-platform');
+    if (btnG) btnG.classList.add('active');
+    if (btnP) btnP.classList.remove('active');
+    buildControls();
+    resetSimulation();
+  }
+
+  function setPlatformLevel(h = 15) {
+    projectile.h0 = h;
+    const h0Slider = document.getElementById('ctrl-proj-h0');
+    const h0Val = document.getElementById('val-proj-h0');
+    if (h0Slider) {
+      h0Slider.value = h;
+      updateSliderFill(h0Slider);
+    }
+    if (h0Val) h0Val.textContent = h + ' m';
+    const btnG = document.getElementById('btn-proj-ground');
+    const btnP = document.getElementById('btn-proj-platform');
+    if (btnG) btnG.classList.remove('active');
+    if (btnP) btnP.classList.add('active');
+    buildControls();
+    resetSimulation();
+  }
+
+  function setProjPreset(bodyId) {
+    const body = CELESTIAL_BODIES[bodyId];
+    if (!body) return;
+    projectile.selectedBody = bodyId;
+    projectile.gravity = body.g;
     const gSlider = document.getElementById('ctrl-proj-g');
     const gVal = document.getElementById('val-proj-g');
     if (gSlider) {
-      gSlider.value = projectile.gravity;
+      gSlider.value = body.g;
       updateSliderFill(gSlider);
     }
-    if (gVal) gVal.textContent = projectile.gravity + ' m/s²';
+    if (gVal) gVal.textContent = body.g + ' m/s²';
 
-    ['earth', 'moon', 'mars', 'jupiter'].forEach(p => {
-      const btn = document.getElementById(`btn-planet-${p}`);
-      if (btn) btn.classList.toggle('active', p === name);
+    Object.keys(CELESTIAL_BODIES).forEach(k => {
+      const btn = document.getElementById(`btn-planet-${k}`);
+      if (btn) btn.classList.toggle('active', k === bodyId);
     });
 
+    buildControls();
+    resetSimulation();
+  }
+
+  function toggleCompareMode(enabled) {
+    projectile.compareMode = !!enabled;
+    buildControls();
+    resetSimulation();
+  }
+
+  function toggleComparedBody(bodyId) {
+    if (!projectile.comparedBodies) projectile.comparedBodies = ['earth', 'moon', 'jupiter'];
+    const idx = projectile.comparedBodies.indexOf(bodyId);
+    if (idx >= 0) {
+      if (projectile.comparedBodies.length > 1) {
+        projectile.comparedBodies.splice(idx, 1);
+      }
+    } else {
+      projectile.comparedBodies.push(bodyId);
+    }
+    buildControls();
     resetSimulation();
   }
 
@@ -1824,34 +2205,58 @@ const PhysicsLab = (() => {
   function updateSimulation(dt) {
     simTime += dt;
     if (activeSim === 'projectile') {
-      if (!projectile.landed) {
-        projectile.t += dt;
-        const g = projectile.gravity;
-        if (!projectile.airDrag) {
-          const rad = (projectile.angle * Math.PI) / 180;
-          const v0x = projectile.v0 * Math.cos(rad);
-          const v0y = projectile.v0 * Math.sin(rad);
-          projectile.x = v0x * projectile.t;
-          projectile.y = projectile.h0 + v0y * projectile.t - 0.5 * g * projectile.t * projectile.t;
-          projectile.vx = v0x;
-          projectile.vy = v0y - g * projectile.t;
-        } else {
-          // Numerical integration with drag
-          const k = projectile.dragCoeff;
-          const v = Math.hypot(projectile.vx, projectile.vy);
-          const ax = -k * v * projectile.vx;
-          const ay = -g - k * v * projectile.vy;
-          projectile.vx += ax * dt;
-          projectile.vy += ay * dt;
-          projectile.x += projectile.vx * dt;
-          projectile.y += projectile.vy * dt;
-        }
-        projectile.trail.push({ x: projectile.x, y: projectile.y });
-        if (projectile.trail.length > 500) projectile.trail.shift();
+      const rad = (projectile.angle * Math.PI) / 180;
+      const v0x = projectile.v0 * Math.cos(rad);
+      const v0y = projectile.v0 * Math.sin(rad);
 
-        if (projectile.y <= 0 && projectile.t > 0.05) {
-          projectile.y = 0;
-          projectile.landed = true;
+      if (projectile.compareMode && projectile.compareSims) {
+        let allLanded = true;
+        Object.values(projectile.compareSims).forEach(sim => {
+          if (!sim.landed) {
+            allLanded = false;
+            sim.t += dt;
+            const bg = sim.g;
+            sim.x = v0x * sim.t;
+            sim.y = projectile.h0 + v0y * sim.t - 0.5 * bg * sim.t * sim.t;
+            sim.vx = v0x;
+            sim.vy = v0y - bg * sim.t;
+            sim.trail.push({ x: sim.x, y: sim.y });
+            if (sim.trail.length > 600) sim.trail.shift();
+
+            if (sim.y <= 0 && sim.t > 0.05) {
+              sim.y = 0;
+              sim.landed = true;
+            }
+          }
+        });
+        projectile.landed = allLanded;
+      } else {
+        if (!projectile.landed) {
+          projectile.t += dt;
+          const g = projectile.gravity;
+          if (!projectile.airDrag) {
+            projectile.x = v0x * projectile.t;
+            projectile.y = projectile.h0 + v0y * projectile.t - 0.5 * g * projectile.t * projectile.t;
+            projectile.vx = v0x;
+            projectile.vy = v0y - g * projectile.t;
+          } else {
+            // Numerical integration with drag
+            const k = projectile.dragCoeff;
+            const v = Math.hypot(projectile.vx, projectile.vy);
+            const ax = -k * v * projectile.vx;
+            const ay = -g - k * v * projectile.vy;
+            projectile.vx += ax * dt;
+            projectile.vy += ay * dt;
+            projectile.x += projectile.vx * dt;
+            projectile.y += projectile.vy * dt;
+          }
+          projectile.trail.push({ x: projectile.x, y: projectile.y });
+          if (projectile.trail.length > 500) projectile.trail.shift();
+
+          if (projectile.y <= 0 && projectile.t > 0.05) {
+            projectile.y = 0;
+            projectile.landed = true;
+          }
         }
       }
     } else if (activeSim === 'pendulum') {
@@ -2016,8 +2421,8 @@ const PhysicsLab = (() => {
   // 1. RENDER PROJECTILE (High-End Interactive Lab Viewport)
   // ─────────────────────────────────────────────────────────────
   function renderProjectile(W, H) {
-    const originX = 85;
-    const groundY = H - 85;
+    const originX = projectile.originX || 80;
+    const groundY = Math.round(H - Math.max(120, H * 0.16));
     const sc = projectile.scale;
 
     ctx.save();
@@ -2184,278 +2589,521 @@ const PhysicsLab = (() => {
     const vy0 = projectile.v0 * Math.sin(rad0);
     const g = projectile.gravity;
 
-    ctx.save();
-    ctx.beginPath();
-    ctx.setLineDash([6, 5]);
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
-    ctx.lineWidth = 2;
-    for (let simT = 0; simT <= projectile.flightT; simT += 0.05) {
-      const tx = originX + (vx0 * simT) * sc;
-      const ty = (groundY - platH) - ((vy0 * simT - 0.5 * g * simT * simT) * sc);
-      if (simT === 0) ctx.moveTo(tx, ty);
-      else ctx.lineTo(tx, ty);
-    }
-    ctx.stroke();
-    ctx.restore();
+    if (projectile.compareMode && projectile.compareSims) {
+      // ═══════════════════════════════════════════════════════════
+      // MULTI-BODY COMPARISON MODE RENDERING
+      // ═══════════════════════════════════════════════════════════
+      const simsList = Object.values(projectile.compareSims);
 
-    // ── 5. ACTIVE SIMULATION TRAIL (Glowing Neon Ribbon) ──
-    if (projectile.trail.length > 1) {
+      // 1. Theoretical Trajectories for all compared celestial bodies
+      simsList.forEach(sim => {
+        const simG = sim.g;
+        const simColor = sim.color || '#38bdf8';
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = simColor;
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 2;
+        for (let simT = 0; simT <= sim.flightT; simT += 0.05) {
+          const tx = originX + (vx0 * simT) * sc;
+          const ty = (groundY - platH) - ((vy0 * simT - 0.5 * simG * simT * simT) * sc);
+          if (simT === 0) ctx.moveTo(tx, ty);
+          else ctx.lineTo(tx, ty);
+        }
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // 2. Active Trails for all bodies
+      simsList.forEach(sim => {
+        if (sim.trail.length > 1) {
+          const simColor = sim.color || '#38bdf8';
+          ctx.save();
+          ctx.shadowColor = simColor;
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.strokeStyle = simColor;
+          ctx.lineWidth = 2.5;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          sim.trail.forEach((p, idx) => {
+            const sx = originX + p.x * sc;
+            const sy = (groundY - platH) - (p.y - projectile.h0) * sc;
+            if (idx === 0) ctx.moveTo(sx, sy);
+            else ctx.lineTo(sx, sy);
+          });
+          ctx.stroke();
+          ctx.restore();
+        }
+      });
+
+      // 3. Maximum Height Markers & Droplines (staggered)
+      simsList.forEach((sim, sIdx) => {
+        const simG = sim.g;
+        const simColor = sim.color || '#38bdf8';
+        const sMaxHX = originX + (vx0 * (vy0 / simG)) * sc;
+        const sMaxHY = groundY - sim.maxH * sc;
+
+        // Dropline
+        ctx.save();
+        ctx.strokeStyle = simColor;
+        ctx.globalAlpha = 0.4;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(sMaxHX, sMaxHY);
+        ctx.lineTo(sMaxHX, groundY);
+        ctx.stroke();
+        ctx.restore();
+
+        // Maximum height dot
+        ctx.save();
+        ctx.fillStyle = simColor;
+        ctx.shadowColor = simColor;
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.arc(sMaxHX, sMaxHY, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Maximum Height Badge
+        const sBadgeTxt = `▲ ${sim.icon} ${sim.name}: ${sim.maxH.toFixed(1)}m`;
+        ctx.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
+        const sBadgeW = ctx.measureText(sBadgeTxt).width + 14;
+        const sBadgeX = Math.max(10, Math.min(W - sBadgeW - 10, sMaxHX - sBadgeW / 2));
+        const sBadgeY = Math.max(18, sMaxHY - 22 - (sIdx % 2) * 14);
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.strokeStyle = simColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(sBadgeX, sBadgeY, sBadgeW, 18, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(sBadgeTxt, sBadgeX + sBadgeW / 2, sBadgeY + 9);
+        ctx.restore();
+      });
+
+      // 4. Ground Landing Radar Targets
+      simsList.forEach((sim, sIdx) => {
+        const simColor = sim.color || '#38bdf8';
+        const sRangeX = originX + sim.range * sc;
+
+        ctx.save();
+        ctx.strokeStyle = simColor;
+        ctx.globalAlpha = 0.6;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.ellipse(sRangeX, groundY, 12, 4, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = simColor;
+        ctx.beginPath();
+        ctx.arc(sRangeX, groundY, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Landing target badge (staggered below ground)
+        const sRangeTxt = `${sim.icon} ${sim.range.toFixed(1)}m`;
+        ctx.font = 'bold 9.5px "Cascadia Code", monospace';
+        const sRangeW = ctx.measureText(sRangeTxt).width + 10;
+        const sRBadgeX = Math.max(10, Math.min(W - sRangeW - 10, sRangeX - sRangeW / 2));
+        const sRBadgeY = groundY + 12 + (sIdx % 3) * 18;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.strokeStyle = simColor;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(sRBadgeX, sRBadgeY, sRangeW, 16, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = simColor;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(sRangeTxt, sRBadgeX + sRangeW / 2, sRBadgeY + 8);
+        ctx.restore();
+      });
+
+      // 5. Orbs & Velocity Vectors for all bodies
+      simsList.forEach(sim => {
+        const simColor = sim.color || '#38bdf8';
+        const sCurrX = originX + sim.x * sc;
+        const sCurrY = (groundY - platH) - (sim.y - projectile.h0) * sc;
+
+        ctx.save();
+        const orbGrad = ctx.createRadialGradient(sCurrX, sCurrY, 1, sCurrX, sCurrY, 14);
+        orbGrad.addColorStop(0, '#ffffff');
+        orbGrad.addColorStop(0.3, simColor);
+        orbGrad.addColorStop(0.7, simColor);
+        orbGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = orbGrad;
+        ctx.beginPath();
+        ctx.arc(sCurrX, sCurrY, 14, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(sCurrX, sCurrY, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        if (!sim.landed) {
+          drawVector(sCurrX, sCurrY, sim.vx * 1.5, -sim.vy * 1.5, simColor, '');
+        }
+      });
+
+      // 6. On-Canvas Comparison Legend at Top-Left
       ctx.save();
-      ctx.shadowColor = 'rgba(56, 189, 248, 0.8)';
+      const legX = 22;
+      const legY = 22;
+      const legW = 270;
+      const legH = 28 + simsList.length * 20;
+      ctx.fillStyle = 'rgba(11, 20, 38, 0.88)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+      ctx.lineWidth = 1.2;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
       ctx.shadowBlur = 10;
       ctx.beginPath();
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 3;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      projectile.trail.forEach((p, idx) => {
-        const sx = originX + p.x * sc;
-        const sy = (groundY - platH) - (p.y - projectile.h0) * sc;
-        if (idx === 0) ctx.moveTo(sx, sy);
-        else ctx.lineTo(sx, sy);
-      });
+      ctx.roundRect(legX, legY, legW, legH, 8);
+      ctx.fill();
       ctx.stroke();
-
-      // Bright inner core
-      ctx.strokeStyle = '#f0f9ff';
-      ctx.lineWidth = 1.2;
       ctx.shadowBlur = 0;
+
+      ctx.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('🪐 CELESTIAL GRAVITY COMPARISON', legX + 10, legY + 8);
+
+      simsList.forEach((sim, idx) => {
+        const itemY = legY + 25 + idx * 20;
+        ctx.fillStyle = sim.color;
+        ctx.beginPath();
+        ctx.arc(legX + 14, itemY + 6, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.font = 'bold 10.5px "Segoe UI", system-ui, sans-serif';
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillText(`${sim.icon} ${sim.name}`, legX + 24, itemY);
+
+        ctx.font = '10px "Cascadia Code", monospace';
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(`${sim.g}m/s²`, legX + 105, itemY);
+
+        ctx.fillStyle = '#fda4af';
+        ctx.fillText(`H:${sim.maxH.toFixed(0)}m`, legX + 165, itemY);
+
+        ctx.fillStyle = '#86efac';
+        ctx.fillText(`R:${sim.range.toFixed(0)}m`, legX + 225, itemY);
+      });
+      ctx.restore();
+
+      // Comparison Telemetry Chips
+      const earthSim = projectile.compareSims['earth'];
+      const moonSim = projectile.compareSims['moon'];
+      let ratioTxt = '';
+      if (moonSim && earthSim) {
+        ratioTxt = `🌙 Moon ${(moonSim.flightT / Math.max(0.1, earthSim.flightT)).toFixed(1)}× longer airtime`;
+      }
+      updateTelemetry(`
+        <div class="phys-tele-chip">
+          <span class="chip-k">🪐 Compare Mode:</span>
+          <span class="chip-v" style="color:#38bdf8;">${simsList.length} Celestial Bodies</span>
+        </div>
+        <div class="phys-tele-chip">
+          <span class="chip-k">🚀 Launch:</span>
+          <span class="chip-v" style="color:#fbbf24;">v₀=${projectile.v0} m/s, θ=${projectile.angle}°</span>
+        </div>
+        <div class="phys-tele-chip">
+          <span class="chip-k">💡 Key Insight:</span>
+          <span class="chip-v" style="color:#a7f3d0;">${ratioTxt || 'All trajectories auto-scaled to viewport'}</span>
+        </div>
+      `);
+
+    } else {
+      // ═══════════════════════════════════════════════════════════
+      // SINGLE BODY MODE RENDERING (Earth / Moon / Mars / Jupiter / etc.)
+      // ═══════════════════════════════════════════════════════════
+      const activeBody = CELESTIAL_BODIES[projectile.selectedBody] || { color: '#38bdf8', icon: '🌍', name: 'Earth' };
+      const bodyColor = activeBody.color || '#38bdf8';
+
+      // ── 4. THEORETICAL TRAJECTORY (Translucent Ribbon) ──
+      ctx.save();
+      ctx.beginPath();
+      ctx.setLineDash([6, 5]);
+      ctx.strokeStyle = bodyColor;
+      ctx.globalAlpha = 0.45;
+      ctx.lineWidth = 2;
+      for (let simT = 0; simT <= projectile.flightT; simT += 0.05) {
+        const tx = originX + (vx0 * simT) * sc;
+        const ty = (groundY - platH) - ((vy0 * simT - 0.5 * g * simT * simT) * sc);
+        if (simT === 0) ctx.moveTo(tx, ty);
+        else ctx.lineTo(tx, ty);
+      }
       ctx.stroke();
       ctx.restore();
+
+      // ── 5. ACTIVE SIMULATION TRAIL (Glowing Neon Ribbon) ──
+      if (projectile.trail.length > 1) {
+        ctx.save();
+        ctx.shadowColor = bodyColor;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.strokeStyle = bodyColor;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        projectile.trail.forEach((p, idx) => {
+          const sx = originX + p.x * sc;
+          const sy = (groundY - platH) - (p.y - projectile.h0) * sc;
+          if (idx === 0) ctx.moveTo(sx, sy);
+          else ctx.lineTo(sx, sy);
+        });
+        ctx.stroke();
+
+        // Bright inner core
+        ctx.strokeStyle = '#f0f9ff';
+        ctx.lineWidth = 1.2;
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // ── 6. PROJECTILE ORB (Plasma Energy Core) ──
+      const currX = originX + projectile.x * sc;
+      const currY = (groundY - platH) - (projectile.y - projectile.h0) * sc;
+
+      ctx.save();
+      const orbGrad = ctx.createRadialGradient(currX, currY, 2, currX, currY, 16);
+      orbGrad.addColorStop(0, '#ffffff');
+      orbGrad.addColorStop(0.25, bodyColor);
+      orbGrad.addColorStop(0.65, bodyColor);
+      orbGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = orbGrad;
+      ctx.beginPath();
+      ctx.arc(currX, currY, 16, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Inner bright core
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(currX, currY, 5.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // ── 7. VELOCITY VECTORS (Real-time Decomposition) ──
+      if (!projectile.landed) {
+        const vScale = 1.8;
+        drawVector(currX, currY, projectile.vx * vScale, -projectile.vy * vScale, '#facc15', 'v');
+        drawVector(currX, currY, projectile.vx * vScale, 0, bodyColor, 'vₓ');
+        drawVector(currX, currY, 0, -projectile.vy * vScale, '#c084fc', 'vᵧ');
+      }
+
+      // ── 8. MAXIMUM HEIGHT CALLOUT (Neon Dropline & Badge) ──
+      const maxHX = originX + (vx0 * (vy0 / g)) * sc;
+      const maxHY = groundY - projectile.maxH * sc;
+
+      // Vertical dropline to ground
+      ctx.save();
+      ctx.strokeStyle = 'rgba(244, 63, 94, 0.35)';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(maxHX, maxHY);
+      ctx.lineTo(maxHX, groundY);
+      ctx.stroke();
+      ctx.restore();
+
+      // Maximum Height Dot with glow
+      ctx.save();
+      ctx.fillStyle = '#f43f5e';
+      ctx.shadowColor = '#f43f5e';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(maxHX, maxHY, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Maximum Height Badge Card
+      const maxHTxt = `▲ Max Height: ${projectile.maxH.toFixed(1)}m`;
+      ctx.font = 'bold 11px "Segoe UI", system-ui, sans-serif';
+      const maxHW = ctx.measureText(maxHTxt).width + 16;
+      const badgeX = Math.max(10, Math.min(W - maxHW - 10, maxHX - maxHW / 2));
+      const badgeY = maxHY - 26;
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.strokeStyle = 'rgba(244, 63, 94, 0.6)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(badgeX, badgeY, maxHW, 20, 5);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#fda4af';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(maxHTxt, badgeX + maxHW / 2, badgeY + 10);
+      ctx.restore();
+
+      // ── 9. RANGE LANDING TARGET (Radar Pulsing Rings) ──
+      const rangeX = originX + projectile.range * sc;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(rangeX, groundY, 14, 5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(74, 222, 128, 0.3)';
+      ctx.beginPath();
+      ctx.ellipse(rangeX, groundY, 24, 8, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#4ade80';
+      ctx.shadowColor = '#4ade80';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(rangeX, groundY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Range Badge Card
+      const rangeTxt = `🎯 Range: ${projectile.range.toFixed(1)}m`;
+      ctx.font = 'bold 11px "Segoe UI", system-ui, sans-serif';
+      const rangeW = ctx.measureText(rangeTxt).width + 16;
+      const rBadgeX = Math.max(10, Math.min(W - rangeW - 10, rangeX - rangeW / 2));
+      const rBadgeY = groundY + 16;
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(rBadgeX, rBadgeY, rangeW, 20, 5);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#86efac';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(rangeTxt, rBadgeX + rangeW / 2, rBadgeY + 10);
+      ctx.restore();
+
+      // ── 10. ON-CANVAS FLOATING KINEMATICS & ENERGY HUD ──
+      const hudW = 205;
+      const hudH = 135;
+      const hudX = W - hudW - 18;
+      const hudY = 16;
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(11, 20, 38, 0.82)';
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+      ctx.lineWidth = 1.2;
+      ctx.shadowColor = 'rgba(0,0,0,0.4)';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.roundRect(hudX, hudY, hudW, hudH, 10);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // HUD Header
+      ctx.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
+      ctx.fillStyle = '#94a3b8';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`⚡ LIVE ENERGY & TELEMETRY (${activeBody.name})`, hudX + 12, hudY + 10);
+
+      // Dynamic Kinetic & Potential Energy Calculation
+      const mass = 1.0; // kg
+      const curSpeed = Math.hypot(projectile.vx, projectile.vy);
+      const ke = 0.5 * mass * curSpeed * curSpeed;
+      const pe = mass * projectile.gravity * Math.max(0, projectile.y);
+      const totalE = Math.max(ke + pe, 1);
+
+      // Mini Energy Bars
+      const barW = 100;
+      const barH = 7;
+      const barLeft = hudX + 88;
+
+      // KE Bar
+      ctx.font = '10px "Cascadia Code", monospace';
+      ctx.fillStyle = '#7dd3fc';
+      ctx.fillText('Kinetic', hudX + 12, hudY + 30);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.beginPath();
+      ctx.roundRect(barLeft, hudY + 31, barW, barH, 3);
+      ctx.fill();
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath();
+      ctx.roundRect(barLeft, hudY + 31, Math.max(2, (ke / totalE) * barW), barH, 3);
+      ctx.fill();
+
+      // PE Bar
+      ctx.fillStyle = '#86efac';
+      ctx.fillText('Potential', hudX + 12, hudY + 48);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.beginPath();
+      ctx.roundRect(barLeft, hudY + 49, barW, barH, 3);
+      ctx.fill();
+      ctx.fillStyle = '#4ade80';
+      ctx.beginPath();
+      ctx.roundRect(barLeft, hudY + 49, Math.max(2, (pe / totalE) * barW), barH, 3);
+      ctx.fill();
+
+      // Divider
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.beginPath();
+      ctx.moveTo(hudX + 10, hudY + 67);
+      ctx.lineTo(hudX + hudW - 10, hudY + 67);
+      ctx.stroke();
+
+      // Speed and Altitude Readouts
+      ctx.font = '9.5px "Cascadia Code", monospace';
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillText(`Velocity: ${curSpeed.toFixed(1)} m/s`, hudX + 12, hudY + 74);
+      ctx.fillText(`Altitude: ${projectile.y.toFixed(1)} m`, hudX + 12, hudY + 90);
+      ctx.fillText(`Elapsed : ${projectile.t.toFixed(2)} s`, hudX + 12, hudY + 106);
+      ctx.fillText(`Distance: ${projectile.x.toFixed(1)} m`, hudX + 108, hudY + 90);
+      ctx.fillText(`Angle θ : ${projectile.angle}°`, hudX + 108, hudY + 106);
+      ctx.restore();
+
+      // ── 11. CYBERNETIC DOCK TELEMETRY CHIPS ──
+      const speedVal = Math.hypot(projectile.vx, projectile.vy).toFixed(1);
+      updateTelemetry(`
+        <div class="phys-tele-chip">
+          <span class="chip-k">⏱ Time:</span>
+          <span class="chip-v" style="color:#fbbf24;">${projectile.t.toFixed(2)}s</span>
+        </div>
+        <div class="phys-tele-chip">
+          <span class="chip-k">📍 Pos:</span>
+          <span class="chip-v" style="color:#38bdf8;">x=${projectile.x.toFixed(1)}m, y=${projectile.y.toFixed(1)}m</span>
+        </div>
+        <div class="phys-tele-chip">
+          <span class="chip-k">⚡ Velocity:</span>
+          <span class="chip-v" style="color:#4ade80;">${speedVal} m/s</span>
+          <span style="color:#64748b;font-size:10px;">(vₓ=${projectile.vx.toFixed(1)}, vᵧ=${projectile.vy.toFixed(1)})</span>
+        </div>
+        <div class="phys-tele-chip">
+          <span class="chip-k">▲ Max Height:</span>
+          <span class="chip-v" style="color:#f43f5e;">${projectile.maxH.toFixed(2)}m</span>
+        </div>
+        <div class="phys-tele-chip">
+          <span class="chip-k">🎯 Range R:</span>
+          <span class="chip-v" style="color:#c084fc;">${projectile.range.toFixed(2)}m</span>
+        </div>
+        <div class="phys-tele-chip">
+          <span class="chip-k">💨 Drag:</span>
+          <span class="chip-v" style="color:${projectile.airDrag ? '#38bdf8' : '#64748b'};">${projectile.airDrag ? 'ON' : 'OFF'}</span>
+        </div>
+      `);
     }
 
-    // ── 6. PROJECTILE ORB (Plasma Energy Core) ──
-    const currX = originX + projectile.x * sc;
-    const currY = (groundY - platH) - (projectile.y - projectile.h0) * sc;
-
-    ctx.save();
-    // Outer glow
-    const orbGrad = ctx.createRadialGradient(currX, currY, 2, currX, currY, 16);
-    orbGrad.addColorStop(0, '#ffffff');
-    orbGrad.addColorStop(0.25, '#7dd3fc');
-    orbGrad.addColorStop(0.65, '#0284c7');
-    orbGrad.addColorStop(1, 'rgba(2, 132, 199, 0)');
-    ctx.fillStyle = orbGrad;
-    ctx.beginPath();
-    ctx.arc(currX, currY, 16, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Inner bright core
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(currX, currY, 5.5, 0, Math.PI * 2);
-    ctx.fill();
     ctx.restore();
-
-    // ── 7. VELOCITY VECTORS (Real-time Decomposition) ──
-    if (!projectile.landed) {
-      const vScale = 1.8;
-      drawVector(currX, currY, projectile.vx * vScale, -projectile.vy * vScale, '#facc15', 'v');
-      drawVector(currX, currY, projectile.vx * vScale, 0, '#38bdf8', 'vₓ');
-      drawVector(currX, currY, 0, -projectile.vy * vScale, '#c084fc', 'vᵧ');
-    }
-
-    // ── 8. APEX CALLOUT (Neon Crimson Dropline & Badge) ──
-    const apexX = originX + (vx0 * (vy0 / g)) * sc;
-    const apexY = groundY - projectile.maxH * sc;
-
-    // Vertical dropline to ground
-    ctx.save();
-    ctx.strokeStyle = 'rgba(244, 63, 94, 0.35)';
-    ctx.lineWidth = 1.2;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(apexX, apexY);
-    ctx.lineTo(apexX, groundY);
-    ctx.stroke();
-    ctx.restore();
-
-    // Apex Dot with glow
-    ctx.save();
-    ctx.fillStyle = '#f43f5e';
-    ctx.shadowColor = '#f43f5e';
-    ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.arc(apexX, apexY, 4.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Apex Badge Card
-    const apexTxt = `▲ Apex: ${projectile.maxH.toFixed(1)}m`;
-    ctx.font = 'bold 11px "Segoe UI", system-ui, sans-serif';
-    const apexW = ctx.measureText(apexTxt).width + 16;
-    const badgeX = Math.max(10, Math.min(W - apexW - 10, apexX - apexW / 2));
-    const badgeY = apexY - 26;
-
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.strokeStyle = 'rgba(244, 63, 94, 0.6)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(badgeX, badgeY, apexW, 20, 5);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#fda4af';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(apexTxt, badgeX + apexW / 2, badgeY + 10);
-    ctx.restore();
-
-    // ── 9. RANGE LANDING TARGET (Radar Pulsing Rings) ──
-    const rangeX = originX + projectile.range * sc;
-    ctx.save();
-    // Concentric ground radar target rings
-    ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.ellipse(rangeX, groundY, 14, 5, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.strokeStyle = 'rgba(74, 222, 128, 0.3)';
-    ctx.beginPath();
-    ctx.ellipse(rangeX, groundY, 24, 8, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = '#4ade80';
-    ctx.shadowColor = '#4ade80';
-    ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.arc(rangeX, groundY, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Range Badge Card
-    const rangeTxt = `🎯 Range: ${projectile.range.toFixed(1)}m`;
-    ctx.font = 'bold 11px "Segoe UI", system-ui, sans-serif';
-    const rangeW = ctx.measureText(rangeTxt).width + 16;
-    const rBadgeX = Math.max(10, Math.min(W - rangeW - 10, rangeX - rangeW / 2));
-    const rBadgeY = groundY + 16;
-
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-    ctx.strokeStyle = 'rgba(74, 222, 128, 0.6)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(rBadgeX, rBadgeY, rangeW, 20, 5);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#86efac';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(rangeTxt, rBadgeX + rangeW / 2, rBadgeY + 10);
-    ctx.restore();
-
-    // ── 10. ON-CANVAS FLOATING KINEMATICS & ENERGY HUD ──
-    const hudW = 205;
-    const hudH = 135;
-    const hudX = W - hudW - 18;
-    const hudY = 16;
-
-    ctx.save();
-    // Glassmorphism card
-    ctx.fillStyle = 'rgba(11, 20, 38, 0.82)';
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
-    ctx.lineWidth = 1.2;
-    ctx.shadowColor = 'rgba(0,0,0,0.4)';
-    ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.roundRect(hudX, hudY, hudW, hudH, 10);
-    ctx.fill();
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // HUD Header
-    ctx.font = 'bold 10px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = '#94a3b8';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('⚡ LIVE ENERGY & TELEMETRY', hudX + 12, hudY + 10);
-
-    // Dynamic Kinetic & Potential Energy Calculation
-    const mass = 1.0; // kg
-    const curSpeed = Math.hypot(projectile.vx, projectile.vy);
-    const ke = 0.5 * mass * curSpeed * curSpeed;
-    const pe = mass * projectile.gravity * Math.max(0, projectile.y);
-    const totalE = Math.max(ke + pe, 1);
-
-    // Mini Energy Bars
-    const barW = 100;
-    const barH = 7;
-    const barLeft = hudX + 88;
-
-    // KE Bar
-    ctx.font = '10px "Cascadia Code", monospace';
-    ctx.fillStyle = '#7dd3fc';
-    ctx.fillText('Kinetic', hudX + 12, hudY + 30);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.beginPath();
-    ctx.roundRect(barLeft, hudY + 31, barW, barH, 3);
-    ctx.fill();
-    ctx.fillStyle = '#38bdf8';
-    ctx.beginPath();
-    ctx.roundRect(barLeft, hudY + 31, Math.max(2, (ke / totalE) * barW), barH, 3);
-    ctx.fill();
-
-    // PE Bar
-    ctx.fillStyle = '#86efac';
-    ctx.fillText('Potential', hudX + 12, hudY + 48);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.beginPath();
-    ctx.roundRect(barLeft, hudY + 49, barW, barH, 3);
-    ctx.fill();
-    ctx.fillStyle = '#4ade80';
-    ctx.beginPath();
-    ctx.roundRect(barLeft, hudY + 49, Math.max(2, (pe / totalE) * barW), barH, 3);
-    ctx.fill();
-
-    // Divider
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-    ctx.beginPath();
-    ctx.moveTo(hudX + 10, hudY + 67);
-    ctx.lineTo(hudX + hudW - 10, hudY + 67);
-    ctx.stroke();
-
-    // Speed and Altitude Readouts
-    ctx.font = '9.5px "Cascadia Code", monospace';
-    ctx.fillStyle = '#cbd5e1';
-    ctx.fillText(`Velocity: ${curSpeed.toFixed(1)} m/s`, hudX + 12, hudY + 74);
-    ctx.fillText(`Altitude: ${projectile.y.toFixed(1)} m`, hudX + 12, hudY + 90);
-    ctx.fillText(`Elapsed : ${projectile.t.toFixed(2)} s`, hudX + 12, hudY + 106);
-    ctx.fillText(`Distance: ${projectile.x.toFixed(1)} m`, hudX + 108, hudY + 90);
-    ctx.fillText(`Angle θ : ${projectile.angle}°`, hudX + 108, hudY + 106);
-    ctx.restore();
-
-    ctx.restore();
-
-    // ── 11. CYBERNETIC DOCK TELEMETRY CHIPS ──
-    const speedVal = Math.hypot(projectile.vx, projectile.vy).toFixed(1);
-    updateTelemetry(`
-      <div class="phys-tele-chip">
-        <span class="chip-k">⏱ Time:</span>
-        <span class="chip-v" style="color:#fbbf24;">${projectile.t.toFixed(2)}s</span>
-      </div>
-      <div class="phys-tele-chip">
-        <span class="chip-k">📍 Pos:</span>
-        <span class="chip-v" style="color:#38bdf8;">x=${projectile.x.toFixed(1)}m, y=${projectile.y.toFixed(1)}m</span>
-      </div>
-      <div class="phys-tele-chip">
-        <span class="chip-k">⚡ Velocity:</span>
-        <span class="chip-v" style="color:#4ade80;">${speedVal} m/s</span>
-        <span style="color:#64748b;font-size:10px;">(vₓ=${projectile.vx.toFixed(1)}, vᵧ=${projectile.vy.toFixed(1)})</span>
-      </div>
-      <div class="phys-tele-chip">
-        <span class="chip-k">▲ Apex H:</span>
-        <span class="chip-v" style="color:#f43f5e;">${projectile.maxH.toFixed(2)}m</span>
-      </div>
-      <div class="phys-tele-chip">
-        <span class="chip-k">🎯 Range R:</span>
-        <span class="chip-v" style="color:#c084fc;">${projectile.range.toFixed(2)}m</span>
-      </div>
-      <div class="phys-tele-chip">
-        <span class="chip-k">💨 Drag:</span>
-        <span class="chip-v" style="color:${projectile.airDrag ? '#38bdf8' : '#64748b'};">${projectile.airDrag ? 'ON' : 'OFF'}</span>
-      </div>
-    `);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -3430,6 +4078,10 @@ const PhysicsLab = (() => {
     clearAnnotations,
     syncToolWithBoard,
     setProjPreset,
+    setGroundLevel,
+    setPlatformLevel,
+    toggleCompareMode,
+    toggleComparedBody,
     setColType,
     setWaveMode,
     setOpticsMode,

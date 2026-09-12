@@ -154,6 +154,12 @@
           Take Snapshot (PNG)
         </div>
       </button>
+      <button class="dd-item" onclick="App.exportPDF(); UI.closeAllDropdowns()">
+        <div class="dd-item-left">
+          <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="2" width="11" height="15" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M10 2v4h4" stroke="currentColor" stroke-width="1.4"/><path d="M7 11h6M7 14h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          Export All Pages as PDF...
+        </div>
+      </button>
     </div>
   </div>
 
@@ -167,6 +173,80 @@
   <svg viewBox="0 0 20 20" fill="none" style="width:16px;height:16px;"><path d="M7 3v4H3M13 3v4h4M3 13h4v4M17 13h-4v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
   <span>Exit Fullscreen</span>
 </button>
+
+<!-- Floating Fullscreen Page Capsule (Right-Middle side: Navigation, Add Page & Clear Page) -->
+<div id="fs-floating-nav" class="fs-floating-nav" title="Page Controls" onpointerdown="event.stopPropagation()">
+  <button id="fs-nav-prev" class="fs-nav-btn" onclick="App.prevPage()" title="Previous Page (PageUp)" aria-label="Previous Page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 18l-6-6 6-6"/>
+    </svg>
+  </button>
+  <div class="fs-nav-counter" id="fs-nav-counter" title="Current Page">
+    <span class="fs-nav-num" id="fs-nav-page-num">1</span>
+    <span class="fs-nav-sep">/</span>
+    <span class="fs-nav-total" id="fs-nav-page-total">1</span>
+  </div>
+  <button id="fs-nav-next" class="fs-nav-btn" onclick="App.nextPage()" title="Next Page (PageDown)" aria-label="Next Page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 18l6-6-6-6"/>
+    </svg>
+  </button>
+  
+  <div class="fs-nav-divider"></div>
+
+  <button id="fs-btn-add-page" class="fs-nav-btn fs-add-page-action" onclick="App.addPage()" title="Add New Page (Ctrl+Shift+N)" aria-label="Add New Page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 5v14M5 12h14"/>
+    </svg>
+  </button>
+
+  <button id="fs-btn-clear-page" class="fs-nav-btn fs-clear-page-action" onclick="App.confirmClearCurrentPage()" title="Clear Current Page" aria-label="Clear Current Page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/>
+    </svg>
+  </button>
+</div>
+
+<!-- Clear Page Confirmation Modal -->
+<div id="fs-clear-modal" class="fs-modal-backdrop hidden" onclick="if(event.target===this)App.closeClearModal()" onpointerdown="event.stopPropagation()">
+  <div class="fs-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="fs-modal-title">
+    <div class="fs-modal-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/>
+      </svg>
+    </div>
+    <div class="fs-modal-body">
+      <h3 id="fs-modal-title" class="fs-modal-title">Clear this page?</h3>
+      <p id="fs-modal-desc" class="fs-modal-desc">This will remove all content from the current page.</p>
+    </div>
+    <div class="fs-modal-actions">
+      <button type="button" class="fs-modal-btn fs-modal-cancel" onclick="App.closeClearModal()">Cancel</button>
+      <button type="button" class="fs-modal-btn fs-modal-confirm" onclick="App.executeClearCurrentPage()">Clear Page</button>
+    </div>
+  </div>
+</div>
+
+<!-- PDF Ready Download Modal -->
+<div id="pdf-ready-modal" class="fs-modal-backdrop hidden" onclick="if(event.target===this)App.closePdfModal()" onpointerdown="event.stopPropagation()">
+  <div class="fs-modal-dialog pdf-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="pdf-modal-title">
+    <div class="fs-modal-icon pdf-modal-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="12" y1="18" x2="12" y2="12"/>
+        <line x1="9" y1="15" x2="15" y2="15"/>
+      </svg>
+    </div>
+    <div class="fs-modal-body">
+      <h3 id="pdf-modal-title" class="fs-modal-title" style="color:#10b981;">PDF Document Ready!</h3>
+      <p id="pdf-modal-desc" class="fs-modal-desc">All pages compiled into 1 PDF document.</p>
+    </div>
+    <div class="fs-modal-actions">
+      <button type="button" class="fs-modal-btn fs-modal-cancel" onclick="App.closePdfModal()">Cancel</button>
+      <button type="button" id="pdf-modal-download-btn" class="fs-modal-btn pdf-modal-download" onclick="App.downloadGeneratedPdf()">📥 Download PDF</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══════════ PAGE TABS BAR ══════════ -->
 <div id="page-tabs-bar">
@@ -847,6 +927,7 @@
 <script src="tools/image-tool.js"></script>
 <script src="tools/drawing.js"></script>
 <script src="tools/smart-drawing.js"></script>
+<script src="tools/clipboard.js"></script>
 <script src="tools/ai-assistant.js"></script>
 <script src="chapters/calculators.js"></script>
 <script src="chapters/science-calculators.js"></script>

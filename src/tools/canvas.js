@@ -613,6 +613,17 @@ const Canvas = (() => {
     shapeCtx.restore();
     updateFormulaBadge();
     updateFloatingToolbar();
+    if (typeof BoardClipboard !== 'undefined' && BoardClipboard.renderSelectionOverlay) {
+      BoardClipboard.renderSelectionOverlay();
+    }
+  }
+
+  function getShapesRef() {
+    return shapes;
+  }
+
+  function getStrokesRef() {
+    return strokes;
   }
 
   function getStrokes() {
@@ -626,6 +637,7 @@ const Canvas = (() => {
 
   function addStroke(stroke) {
     if (stroke && stroke.points && stroke.points.length > 0) {
+      if (!stroke.id) stroke.id = 'strk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
       strokes.push(stroke);
       saveHistory();
     }
@@ -1142,7 +1154,8 @@ const Canvas = (() => {
     try {
       const entry = {
         shapes: JSON.parse(JSON.stringify(shapes)),
-        strokes: JSON.parse(JSON.stringify(strokes))
+        strokes: JSON.parse(JSON.stringify(strokes)),
+        bgImage: currentBgImage
       };
       history.push(JSON.stringify(entry));
       if (history.length > 50) history.shift();
@@ -1161,11 +1174,17 @@ const Canvas = (() => {
       } else if (parsed && typeof parsed === 'object') {
         shapes = parsed.shapes || [];
         strokes = parsed.strokes || [];
+        if ('bgImage' in parsed) {
+          setBgImage(parsed.bgImage || null);
+        }
       }
     } catch (e) {
       console.error('Failed to restore history', e);
     }
     selected = null;
+    if (typeof BoardClipboard !== 'undefined' && BoardClipboard.clearSelection) {
+      BoardClipboard.clearSelection();
+    }
     renderShapes();
     renderStrokes();
     UI.updateStatus();
@@ -1472,6 +1491,9 @@ const Canvas = (() => {
     updateShapeDimensionBar(null);
     if (typeof TableTool !== 'undefined') TableTool.hideTableContextToolbar();
     if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.hideNoteContextToolbar();
+    if (typeof BoardClipboard !== 'undefined' && BoardClipboard.clearSelection) {
+      BoardClipboard.clearSelection();
+    }
   }
 
   function updateProp(key, value) {
@@ -1489,10 +1511,16 @@ const Canvas = (() => {
     shapes = [];
     strokes = [];
     selected = null;
+    currentBgImage = null;
+    bgImageObj = null;
+    drawGrid();
     drawCtx.save();
     drawCtx.setTransform(currentDPR, 0, 0, currentDPR, 0, 0);
     drawCtx.clearRect(0, 0, W, H);
     drawCtx.restore();
+    if (typeof BoardClipboard !== 'undefined' && BoardClipboard.clearSelection) {
+      BoardClipboard.clearSelection();
+    }
     renderShapes();
     renderStrokes();
     UI.updateStatus();
@@ -1638,6 +1666,11 @@ const Canvas = (() => {
     const pos = getPosFromEvent(e);
     const sb  = document.getElementById('sb-pos');
     if (sb) sb.innerHTML = `x:<b>${Math.round(pos.x)}</b> y:<b>${Math.round(pos.y)}</b>`;
+    if (selected && selected.type === 'graph' && typeof GraphObject !== 'undefined' && !dragging) {
+      if (GraphObject.handlePointerMove(selected, pos.x, pos.y)) {
+        renderShapes();
+      }
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -1998,8 +2031,21 @@ const Canvas = (() => {
       }
     }
 
-    if (tool === 'select' || hit) {
+    if (tool === 'select') {
+      // 1. If clicking inside an active selection, drag the entire selection!
+      if (typeof BoardClipboard !== 'undefined' && BoardClipboard.hasSelection() && BoardClipboard.isPointInSelection(pos)) {
+        BoardClipboard.startMoveSelected(pos);
+        return;
+      }
+
+      // 2. Shape hit test
       if (hit) {
+        if (hit.type === 'graph' && typeof GraphObject !== 'undefined') {
+          if (GraphObject.handlePointerClick(hit, pos.x, pos.y)) {
+            renderShapes();
+            return;
+          }
+        }
         selectShape(hit);
         dragging = hit;
         dragOff  = { x: pos.x - hit.x, y: pos.y - hit.y };
@@ -2012,14 +2058,50 @@ const Canvas = (() => {
             cellClickCandidate = { table: hit, r: tHit.r, c: tHit.c, startX: pos.x, startY: pos.y };
           }
         }
-      } else {
-        deselectAll();
+        if (typeof BoardClipboard !== 'undefined') {
+          BoardClipboard.selectSingleShape(hit);
+        }
+        return;
       }
+
+      // 3. Stroke hit test (handwriting / pen drawing)
+      if (typeof BoardClipboard !== 'undefined') {
+        const strokeHit = BoardClipboard.hitTestStroke(pos.x, pos.y, 14 / zoomLevel);
+        if (strokeHit) {
+          deselectAll();
+          BoardClipboard.selectSingleStroke(strokeHit);
+          BoardClipboard.startMoveSelected(pos);
+          return;
+        }
+
+        // 4. Clicked on empty canvas -> Start lasso selection!
+        deselectAll();
+        BoardClipboard.startLasso(pos);
+        return;
+      }
+
+      deselectAll();
+      return;
+    } else if (hit) {
+      selectShape(hit);
+      dragging = hit;
+      dragOff  = { x: pos.x - hit.x, y: pos.y - hit.y };
     }
   }
 
   function handleMove(pos) {
     const tool = App.currentTool;
+
+    if (typeof BoardClipboard !== 'undefined') {
+      if (BoardClipboard.isLassoing) {
+        BoardClipboard.continueLasso(pos);
+        return;
+      }
+      if (BoardClipboard.isDraggingSelection) {
+        BoardClipboard.moveSelected(pos);
+        return;
+      }
+    }
 
     if (cellClickCandidate && Math.hypot(pos.x - cellClickCandidate.startX, pos.y - cellClickCandidate.startY) > 6) {
       cellClickCandidate = null;
@@ -2281,6 +2363,17 @@ const Canvas = (() => {
   function handleUp(pos) {
     const tool = App.currentTool;
 
+    if (typeof BoardClipboard !== 'undefined') {
+      if (BoardClipboard.isLassoing) {
+        BoardClipboard.endLasso();
+        return;
+      }
+      if (BoardClipboard.isDraggingSelection) {
+        BoardClipboard.endMoveSelected();
+        return;
+      }
+    }
+
     if (cellClickCandidate) {
       const cand = cellClickCandidate;
       cellClickCandidate = null;
@@ -2346,12 +2439,15 @@ const Canvas = (() => {
       return null;
     } catch(e) { return null; }
   }
-  function loadPageState(savedShapes, savedDrawData, savedBgImage, savedStrokes) {
+  function loadPageState(savedShapes, savedDrawData, savedBgImage, savedStrokes, savedHistory, savedRedo) {
     shapes = savedShapes ? JSON.parse(JSON.stringify(savedShapes)) : [];
     strokes = savedStrokes ? JSON.parse(JSON.stringify(savedStrokes)) : [];
     selected = null;
-    history = [];
-    redoStack = [];
+    history = (savedHistory && Array.isArray(savedHistory)) ? JSON.parse(JSON.stringify(savedHistory)) : [];
+    redoStack = (savedRedo && Array.isArray(savedRedo)) ? JSON.parse(JSON.stringify(savedRedo)) : [];
+    if (typeof BoardClipboard !== 'undefined' && BoardClipboard.clearSelection) {
+      BoardClipboard.clearSelection();
+    }
     setBgImage(savedBgImage || null);
     renderShapes();
     if (strokes && strokes.length > 0) {
@@ -2497,11 +2593,11 @@ const Canvas = (() => {
     init, resize, renderShapes, drawGrid, setBoardColor,
     setBgImage, getBgImage,
     addShape, addShapeObject, addImageShape, addTextShape, setShapes, selectShape, deselectAll, hitTest, deleteShape,
-    updateProp, clearAll, undo, redo, saveHistory,
+    updateProp, clearAll, undo, redo, saveHistory, getHistory: () => history, getRedoStack: () => redoStack,
     getState, loadState, snapshot, snapshotJpeg,
     getShapeCount, getDrawCtx, getCanvasSize, getPosFromTouch, getPosFromEvent,
     getBoardPos, getScreenPos, screenToBoard, boardToScreen, applyTransformToCtx, getDPR: () => currentDPR,
-    getShapes, getStrokes, setStrokes, addStroke, renderStrokes, eraseAtPoint,
+    getShapes, getShapesRef, getStrokes, getStrokesRef, setStrokes, addStroke, renderStrokes, eraseAtPoint,
     getDrawData, getDrawDataUrl, loadPageState,
     adjustFontSize, editSelectedText, nudgeSelected, updateFloatingToolbar,
     setTextFontFamily, setTextFontSize, toggleTextBold, cycleTextAlign,
