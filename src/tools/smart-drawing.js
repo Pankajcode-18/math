@@ -11,15 +11,15 @@ const SmartDrawing = (() => {
   // CONFIGURATION & THRESHOLDS (Centralized)
   // ─────────────────────────────────────────────
   const CONFIG = {
-    confidenceThreshold: 0.70,      // Below this, stroke is kept as natural ink
-    closureRatioThreshold: 0.22,    // dist(start, end) / totalLength < this => closed
-    closurePixelThreshold: 42,      // Absolute distance between endpoints to consider closed
+    confidenceThreshold: 0.65,      // Below this, stroke is kept as natural ink
+    closureRatioThreshold: 0.32,    // dist(start, end) / totalLength < this => closed
+    closurePixelThreshold: 75,      // Absolute distance between endpoints to consider closed
     squareRatioTolerance: 0.18,     // |width - height| / max(w, h) < this => square
-    rightAngleToleranceDeg: 16,     // Angle deviation from 90° for rectangular corners
-    straightnessThreshold: 0.90,    // Segment length / arc length for straight lines
-    circleRadialVarianceMax: 0.17,  // Max normalized std dev of radius for circle
-    circleAspectRatioMin: 0.78,     // Min width/height ratio for circle
-    ellipseRadialVarianceMax: 0.26, // Max normalized variance for ellipse
+    rightAngleToleranceDeg: 18,     // Angle deviation from 90° for rectangular corners
+    straightnessThreshold: 0.88,    // Segment length / arc length for straight lines
+    circleRadialVarianceMax: 0.20,  // Max normalized std dev of radius for circle
+    circleAspectRatioMin: 0.74,     // Min width/height ratio for circle
+    ellipseRadialVarianceMax: 0.28, // Max normalized variance for ellipse
     simplificationEpsilonRatio: 0.045 // Epsilon as ratio of bounding box diagonal
   };
 
@@ -379,12 +379,11 @@ const SmartDrawing = (() => {
   function testQuadrilateral(pts, simplified, bounds) {
     // Check if simplified polygon has ~4-5 vertices (including closed loop)
     let corners = getDistinctCorners(simplified);
-    if (corners.length !== 4 && corners.length !== 5) {
-      // Fallback: try higher simplification tolerance to isolate 4 corners
-      corners = getDistinctCorners(ramerDouglasPeucker(pts, bounds.diag * 0.08));
+    if (corners.length !== 4) {
+      corners = extractCornersN(pts, bounds, 4);
     }
 
-    if (corners.length !== 4) return null;
+    if (!corners || corners.length !== 4) return null;
 
     // Compute 4 corner angles
     const angles = [];
@@ -415,7 +414,7 @@ const SmartDrawing = (() => {
       if (diffRatio <= CONFIG.squareRatioTolerance) {
         // SQUARE
         const side = Math.round((w + h) / 2);
-        const conf = Math.max(0.72, Math.min(0.98, 1 - (avgDev / 90) * 1.5 - diffRatio * 0.5));
+        const conf = Math.max(0.78, Math.min(0.98, 1 - (avgDev / 90) * 1.5 - diffRatio * 0.5));
         return {
           type: 'square',
           label: 'Square',
@@ -432,7 +431,7 @@ const SmartDrawing = (() => {
         };
       } else {
         // RECTANGLE
-        const conf = Math.max(0.74, Math.min(0.98, 1 - (avgDev / 90) * 1.5));
+        const conf = Math.max(0.80, Math.min(0.98, 1 - (avgDev / 90) * 1.5));
         return {
           type: 'rectangle',
           label: 'Rectangle',
@@ -449,26 +448,50 @@ const SmartDrawing = (() => {
       }
     }
 
-    // Check Parallelogram / Rhombus / Trapezium
-    const sideLens = [
-      Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y),
-      Math.hypot(corners[2].x - corners[1].x, corners[2].y - corners[1].y),
-      Math.hypot(corners[3].x - corners[2].x, corners[3].y - corners[2].y),
-      Math.hypot(corners[0].x - corners[3].x, corners[0].y - corners[3].y)
-    ];
+    // ── PARALLELOGRAM / RHOMBUS / TRAPEZIUM DETECTION ──
+    // Vector analysis of opposing edges
+    const v0 = { x: corners[1].x - corners[0].x, y: corners[1].y - corners[0].y };
+    const v1 = { x: corners[2].x - corners[1].x, y: corners[2].y - corners[1].y };
+    const v2 = { x: corners[3].x - corners[2].x, y: corners[3].y - corners[2].y };
+    const v3 = { x: corners[0].x - corners[3].x, y: corners[0].y - corners[3].y };
 
-    const oppDiff1 = Math.abs(sideLens[0] - sideLens[2]) / Math.max(sideLens[0], sideLens[2]);
-    const oppDiff2 = Math.abs(sideLens[1] - sideLens[3]) / Math.max(sideLens[1], sideLens[3]);
+    const len0 = Math.hypot(v0.x, v0.y);
+    const len1 = Math.hypot(v1.x, v1.y);
+    const len2 = Math.hypot(v2.x, v2.y);
+    const len3 = Math.hypot(v3.x, v3.y);
 
-    if (oppDiff1 < 0.28 && oppDiff2 < 0.28) {
-      // Parallelogram or Rhombus
-      const allSidesDiff = Math.abs(sideLens[0] - sideLens[1]) / Math.max(sideLens[0], sideLens[1]);
-      if (allSidesDiff < 0.22) {
-        // RHOMBUS
+    // Normalized dot products for parallelism: |cos(angle)| close to 1
+    const dot02 = Math.abs((v0.x * v2.x + v0.y * v2.y) / (Math.max(1, len0 * len2)));
+    const dot13 = Math.abs((v1.x * v3.x + v1.y * v3.y) / (Math.max(1, len1 * len3)));
+
+    const oppRatio02 = Math.abs(len0 - len2) / Math.max(len0, len2);
+    const oppRatio13 = Math.abs(len1 - len3) / Math.max(len1, len3);
+
+    // Both pairs of opposite sides are roughly parallel
+    const isParallelogram = (dot02 > 0.68 && dot13 > 0.68) ||
+                            (oppRatio02 < 0.40 && oppRatio13 < 0.40 && (dot02 > 0.62 || dot13 > 0.62));
+
+    if (isParallelogram) {
+      // Sort corners into top-2 and bottom-2
+      const sortedByY = [...corners].sort((a, b) => a.y - b.y);
+      const topPts = [sortedByY[0], sortedByY[1]].sort((a, b) => a.x - b.x); // TL, TR
+      const botPts = [sortedByY[2], sortedByY[3]].sort((a, b) => a.x - b.x); // BL, BR
+
+      const topW = Math.hypot(topPts[1].x - topPts[0].x, topPts[1].y - topPts[0].y);
+      const botW = Math.hypot(botPts[1].x - botPts[0].x, botPts[1].y - botPts[0].y);
+      const avgBase = Math.round(Math.max(20, (topW + botW) / 2));
+      const slant = Math.round(topPts[0].x - botPts[0].x);
+      const realH = Math.round(Math.max(20, (botPts[0].y + botPts[1].y) / 2 - (topPts[0].y + topPts[1].y) / 2));
+
+      // Check if Rhombus: all 4 sides nearly equal & slant is significant
+      const allSidesDiff = Math.abs(len0 - len1) / Math.max(len0, len1);
+      const isRhombus = allSidesDiff < 0.20 && Math.abs(slant) > 10;
+
+      if (isRhombus && Math.abs(angles[0] - 90) > 14) {
         return {
           type: 'rhombus',
           label: 'Rhombus',
-          confidence: 0.82,
+          confidence: 0.92,
           shape: {
             type: 'rhombus',
             x: Math.round(bounds.minX),
@@ -479,39 +502,49 @@ const SmartDrawing = (() => {
           }
         };
       } else {
-        // PARALLELOGRAM
+        // PARALLELOGRAM: exact placement matching shapes.js
         return {
           type: 'parallelogram',
           label: 'Parallelogram',
-          confidence: 0.81,
+          confidence: 0.94,
           shape: {
             type: 'parallelogram',
-            x: Math.round(bounds.minX),
-            y: Math.round(bounds.minY),
-            base: Math.round(bounds.w * 0.75),
-            slant: Math.round(bounds.w * 0.25),
-            h: Math.round(bounds.h),
+            x: Math.round(botPts[0].x),
+            y: Math.round(Math.min(topPts[0].y, topPts[1].y)),
+            base: avgBase,
+            slant: Math.max(8, Math.abs(slant)),
+            h: realH,
             color: App.currentColor || '#ffffff'
           }
         };
       }
     }
 
-    // TRAPEZIUM
-    return {
-      type: 'trapezium',
-      label: 'Trapezium',
-      confidence: 0.76,
-      shape: {
+    // TRAPEZIUM: at least one pair of parallel sides (top/bottom or left/right)
+    if (dot02 > 0.65 || dot13 > 0.65) {
+      const sortedByY = [...corners].sort((a, b) => a.y - b.y);
+      const topPts = [sortedByY[0], sortedByY[1]].sort((a, b) => a.x - b.x);
+      const botPts = [sortedByY[2], sortedByY[3]].sort((a, b) => a.x - b.x);
+      const topW = Math.round(Math.hypot(topPts[1].x - topPts[0].x, topPts[1].y - topPts[0].y));
+      const botW = Math.round(Math.hypot(botPts[1].x - botPts[0].x, botPts[1].y - botPts[0].y));
+
+      return {
         type: 'trapezium',
-        x: Math.round(bounds.minX),
-        y: Math.round(bounds.minY),
-        a: Math.round(bounds.w * 0.55),
-        b: Math.round(bounds.w),
-        h: Math.round(bounds.h),
-        color: App.currentColor || '#ffffff'
-      }
-    };
+        label: 'Trapezium',
+        confidence: 0.88,
+        shape: {
+          type: 'trapezium',
+          x: Math.round(bounds.minX),
+          y: Math.round(bounds.minY),
+          a: Math.min(topW, botW),
+          b: Math.max(topW, botW),
+          h: Math.round(bounds.h),
+          color: App.currentColor || '#ffffff'
+        }
+      };
+    }
+
+    return null;
   }
 
   // ─────────────────────────────────────────────
@@ -520,9 +553,9 @@ const SmartDrawing = (() => {
   function testTriangle(pts, simplified, bounds) {
     let corners = getDistinctCorners(simplified);
     if (corners.length !== 3) {
-      corners = getDistinctCorners(ramerDouglasPeucker(pts, bounds.diag * 0.09));
+      corners = extractCornersN(pts, bounds, 3);
     }
-    if (corners.length !== 3) return null;
+    if (!corners || corners.length !== 3) return null;
 
     // Check if one angle is approximately 90°
     const angles = [];
@@ -870,14 +903,78 @@ const SmartDrawing = (() => {
   function getDistinctCorners(simplifiedPts) {
     if (!simplifiedPts || simplifiedPts.length <= 1) return [];
     const corners = [simplifiedPts[0]];
-    for (let i = 1; i < simplifiedPts.length; i++) {
+    const n = simplifiedPts.length;
+    for (let i = 1; i < n; i++) {
       const p = simplifiedPts[i];
-      const isStart = (i === simplifiedPts.length - 1 && Math.hypot(p.x - corners[0].x, p.y - corners[0].y) < 18);
-      if (!isStart && Math.hypot(p.x - corners[corners.length - 1].x, p.y - corners[corners.length - 1].y) > 12) {
+      // In hand drawing, the closing endpoint is within 45px of start
+      const isLoopClose = (i === n - 1 && Math.hypot(p.x - corners[0].x, p.y - corners[0].y) < 45);
+      if (!isLoopClose && Math.hypot(p.x - corners[corners.length - 1].x, p.y - corners[corners.length - 1].y) > 16) {
         corners.push(p);
       }
     }
+    // If last corner is very close to first, drop it
+    if (corners.length > 3 && Math.hypot(corners[corners.length - 1].x - corners[0].x, corners[corners.length - 1].y - corners[0].y) < 35) {
+      corners.pop();
+    }
     return corners;
+  }
+
+  // Robustly extract exactly N dominant corners from a closed stroke
+  function extractCornersN(pts, bounds, targetN) {
+    if (!pts || pts.length < targetN * 2) return null;
+
+    // Try a multi-epsilon sweep using Ramer-Douglas-Peucker
+    const epsilons = [
+      bounds.diag * 0.04,
+      bounds.diag * 0.06,
+      bounds.diag * 0.08,
+      bounds.diag * 0.10,
+      bounds.diag * 0.12,
+      bounds.diag * 0.15,
+      bounds.diag * 0.18
+    ];
+
+    for (const eps of epsilons) {
+      const simp = ramerDouglasPeucker(pts, eps);
+      const c = getDistinctCorners(simp);
+      if (c.length === targetN) return c;
+    }
+
+    // Angular deviation search: find points of highest directional curvature
+    const step = Math.max(2, Math.floor(pts.length / 32));
+    const curvatures = [];
+    const len = pts.length;
+    for (let i = step; i < len - step; i += step) {
+      const pPrev = pts[i - step];
+      const pCurr = pts[i];
+      const pNext = pts[i + step];
+      const a1 = Math.atan2(pCurr.y - pPrev.y, pCurr.x - pPrev.x);
+      const a2 = Math.atan2(pNext.y - pCurr.y, pNext.x - pCurr.x);
+      let diff = Math.abs((a2 - a1) * 180 / Math.PI);
+      if (diff > 180) diff = 360 - diff;
+      curvatures.push({ pt: pCurr, curvature: diff, idx: i });
+    }
+
+    // Sort by largest direction turn
+    curvatures.sort((a, b) => b.curvature - a.curvature);
+
+    // Pick top targetN corners that are well-spaced along the path
+    const minSpacing = len / (targetN * 1.6);
+    const chosen = [];
+    for (const item of curvatures) {
+      const isFarEnough = chosen.every(c => Math.abs(c.idx - item.idx) > minSpacing);
+      if (isFarEnough) {
+        chosen.push(item);
+        if (chosen.length === targetN) break;
+      }
+    }
+
+    if (chosen.length === targetN) {
+      chosen.sort((a, b) => a.idx - b.idx);
+      return chosen.map(c => c.pt);
+    }
+
+    return null;
   }
 
   return {

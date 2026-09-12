@@ -75,32 +75,6 @@
     <div class="board-swatch-wrap" id="board-swatches"></div>
   </div>
 
-  <div class="tb-div"></div>
-
-  <!-- Board Brightness Control -->
-  <div class="tb-dropdown board-brightness-control" id="board-brightness-control">
-    <button type="button" class="tb-btn brightness-btn" id="btn-brightness" onclick="App.toggleBrightnessMenu(event)" title="Adjust Entire Board Brightness (Dimmer)">
-      <span class="brightness-icon">☀️</span>
-      <span class="brightness-label" id="brightness-val-label">100%</span>
-    </button>
-    <div class="tb-dropdown-menu brightness-dropdown-menu hidden" id="brightness-dropdown">
-      <div class="bdm-header">
-        <span class="bdm-title">Board Brightness</span>
-        <span class="bdm-pct" id="bdm-pct-text">100%</span>
-      </div>
-      <div class="bdm-slider-row">
-        <span class="bdm-icon-dim">🔅</span>
-        <input type="range" id="board-brightness-slider" min="30" max="100" step="5" value="100" oninput="App.setBoardBrightness(this.value)">
-        <span class="bdm-icon-bright">☀️</span>
-      </div>
-      <div class="bdm-presets">
-        <button type="button" class="bdm-preset-btn active" data-b="100" onclick="App.setBoardBrightness(100)">100% Day</button>
-        <button type="button" class="bdm-preset-btn" data-b="85" onclick="App.setBoardBrightness(85)">85% Room</button>
-        <button type="button" class="bdm-preset-btn" data-b="65" onclick="App.setBoardBrightness(65)">65% Dim</button>
-      </div>
-    </div>
-  </div>
-
   <div class="spacer"></div>
 
   <!-- PRIMARY TEACHING TOOLS (Surfaced Outside Dropdown for 1-Click Access) -->
@@ -122,11 +96,6 @@
 
     <button class="tb-btn rec" id="btn-rec" onclick="App.toggleRecord()" title="Screen Recording">
       <span class="rec-dot"></span> <span>Record</span>
-    </button>
-
-    <button class="tb-btn fullscreen-btn" id="btn-fullscreen" onclick="App.toggleFullscreen()" title="Toggle Fullscreen Board (F11)">
-      <svg viewBox="0 0 20 20" fill="none"><path d="M3 7V4a1 1 0 011-1h3M13 3h3a1 1 0 011 1v3M17 13v3a1 1 0 01-1 1h-3M7 17H4a1 1 0 01-1-1v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span>Fullscreen</span>
     </button>
   </div>
 
@@ -305,6 +274,21 @@
           <path d="M4 20v-7a4 4 0 014-4h12"/>
         </svg>
       </button>
+    </div>
+
+    <!-- 3b. Fullscreen Page Manager (Below sidebar during Fullscreen mode only) -->
+    <div id="fs-page-control" class="fs-page-card" title="Page Control (Fullscreen)">
+      <button class="fs-page-btn fs-add-page-btn" onclick="App.addPage()" title="Add New Page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        <span>Page</span>
+      </button>
+      <div class="fs-page-nav-row">
+        <button class="fs-page-nav-btn" onclick="App.prevPage()" title="Previous Page">◀</button>
+        <span id="fs-page-counter" class="fs-page-counter" title="Current Page">1/1</span>
+        <button class="fs-page-nav-btn" onclick="App.nextPage()" title="Next Page">▶</button>
+      </div>
     </div>
 
     <!-- 4. Pen & Drawing Flyout Pill (Compact, Fits Laptops & SmartBoards without Overlap) -->
@@ -802,8 +786,49 @@
     <div class="sb-chip font-mono" id="sb-pos">x: 0 · y: 0</div>
   </div>
   <div class="sb-right">
+    <!-- Board Brightness Control (Bottom Status Bar) -->
+    <div class="board-brightness-group" id="board-brightness-control" title="Adjust Board Brightness (Use − / ＋ or click for slider)">
+      <button type="button" class="bbp-step-btn dec-btn" id="btn-brightness-dec" onclick="App.adjustBoardBrightness(-10)" title="Decrease Brightness (−10%)" aria-label="Decrease Brightness">−</button>
+      <button type="button" class="bbp-main-btn" id="btn-brightness" onclick="App.toggleBrightnessMenu(event)" title="Adjust Brightness (Click for Slider &amp; Presets)" aria-label="Board Brightness">
+        <span class="brightness-icon">☀️</span>
+        <span class="brightness-label" id="brightness-val-label">100%</span>
+      </button>
+      <button type="button" class="bbp-step-btn inc-btn" id="btn-brightness-inc" onclick="App.adjustBoardBrightness(10)" title="Increase Brightness (+10%)" aria-label="Increase Brightness">＋</button>
+
+      <!-- Interactive Dimmer / Brightness Flyout Menu (Pops up upwards) -->
+      <div class="tb-dropdown-menu brightness-dropdown-menu hidden" id="brightness-dropdown">
+        <div class="bdm-header">
+          <span class="bdm-title">☀️ Board Brightness</span>
+          <span class="bdm-pct" id="bdm-pct-text">100%</span>
+        </div>
+        <div class="bdm-quick-steppers">
+          <button type="button" class="bdm-quick-step-btn" onclick="App.adjustBoardBrightness(-10)">− 10% Dim</button>
+          <button type="button" class="bdm-quick-step-btn bdm-reset" onclick="App.setBoardBrightness(100)">☀️ 100% Full</button>
+          <button type="button" class="bdm-quick-step-btn" onclick="App.adjustBoardBrightness(10)">＋ 10% Bright</button>
+        </div>
+        <div class="bdm-slider-row">
+          <span class="bdm-icon-dim">🔅</span>
+          <input type="range" id="board-brightness-slider" min="30" max="100" step="5" value="100" oninput="App.setBoardBrightness(this.value)">
+          <span class="bdm-icon-bright">☀️</span>
+        </div>
+        <div class="bdm-presets">
+          <button type="button" class="bdm-preset-btn active" data-b="100" onclick="App.setBoardBrightness(100)">100% Day</button>
+          <button type="button" class="bdm-preset-btn" data-b="85" onclick="App.setBoardBrightness(85)">85% Room</button>
+          <button type="button" class="bdm-preset-btn" data-b="70" onclick="App.setBoardBrightness(70)">70% Soft</button>
+          <button type="button" class="bdm-preset-btn" data-b="50" onclick="App.setBoardBrightness(50)">50% Dim</button>
+          <button type="button" class="bdm-preset-btn" data-b="30" onclick="App.setBoardBrightness(30)">30% Dark</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fullscreen Button (Bottom Status Bar) -->
+    <button type="button" class="tb-btn fullscreen-btn sb-fullscreen-btn" id="btn-fullscreen" onclick="App.toggleFullscreen()" title="Toggle Fullscreen Board (F11)">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M3 7V4a1 1 0 011-1h3M13 3h3a1 1 0 011 1v3M17 13v3a1 1 0 01-1 1h-3M7 17H4a1 1 0 01-1-1v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Fullscreen</span>
+    </button>
+
     <span class="sb-brand-tag">PiyushDhara</span>
-    <span class="sb-ver-tag">EduVerse &middot; MathBoard v2.0</span>
+    <span class="sb-ver-tag">EduVerse &middot; v2.0</span>
   </div>
 </footer>
 
@@ -2653,6 +2678,6 @@ window.Library = Library;
 
 </script>
 <!-- Entire Board Brightness Dimmer Overlay -->
-<div id="board-brightness-overlay" style="position:fixed;inset:0;background:black;opacity:0;pointer-events:none;z-index:99990;transition:opacity 0.15s ease;"></div>
+<div id="board-brightness-overlay" style="position:fixed;inset:0;background:black;opacity:0;pointer-events:none;z-index:150;transition:opacity 0.15s ease;"></div>
 </body>
 </html>

@@ -139,6 +139,8 @@ const App = (() => {
     });
 
     $('sb-page').textContent = currentPage + 1;
+    const fsp = $('fs-page-counter');
+    if (fsp) fsp.textContent = `${currentPage + 1}/${pages.length}`;
   }
 
   function addPage() {
@@ -149,6 +151,20 @@ const App = (() => {
     loadCurrent();
     renderPageTabs();
     showToast(`Page ${currentPage + 1} added`);
+  }
+
+  function prevPage() {
+    if (currentPage > 0) {
+      switchPage(currentPage - 1);
+    }
+  }
+
+  function nextPage() {
+    if (currentPage < pages.length - 1) {
+      switchPage(currentPage + 1);
+    } else {
+      addPage();
+    }
   }
 
   function switchPage(idx) {
@@ -761,17 +777,29 @@ const App = (() => {
         setBoardBrightness(parseInt(saved), false);
       }
     } catch(e) {}
+
+    const bCtrl = document.getElementById('board-brightness-control');
+    if (bCtrl) {
+      bCtrl.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        adjustBoardBrightness(e.deltaY < 0 ? 5 : -5);
+      }, { passive: false });
+    }
+  }
+
+  function adjustBoardBrightness(delta) {
+    setBoardBrightness(boardBrightness + delta);
   }
 
   function setBoardBrightness(val, save = true) {
-    boardBrightness = Math.max(30, Math.min(100, parseInt(val) || 100));
+    boardBrightness = Math.max(30, Math.min(100, Math.round((parseInt(val) || 100) / 5) * 5));
     if (save) {
       try { localStorage.setItem('mbp_board_brightness', boardBrightness); } catch(e) {}
     }
 
     const overlay = document.getElementById('board-brightness-overlay');
     if (overlay) {
-      const opacity = ((100 - boardBrightness) / 100) * 0.72;
+      const opacity = ((100 - boardBrightness) / 100) * 0.78;
       overlay.style.opacity = opacity.toFixed(2);
     }
 
@@ -811,6 +839,7 @@ const App = (() => {
     selectChapter, switchSubject,
     toggleSidebar, toggleRPanel,
     addPage, switchPage, deletePage,
+    prevPage, nextPage,
     toggleRecord, takeSnapshot, exportPDF,
     saveBoard, saveBoardAs, loadBoard, clearBoard,
     saveCurrent, getBoardState, loadBoardState,
@@ -826,6 +855,7 @@ const App = (() => {
     get activeChapter(){ return activeChapter; },
     get activeSubject(){ return activeSubject; },
     setBoardBrightness,
+    adjustBoardBrightness,
     toggleBrightnessMenu,
     getBoardBrightness: () => boardBrightness
   };
