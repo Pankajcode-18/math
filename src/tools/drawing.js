@@ -37,7 +37,10 @@ const Drawing = (() => {
   // ─────────────────────────────────────────────
   function startStrokeAt(bx, by, pressure = 0.5) {
     isDrawing = true;
-    points    = [{ x: bx, y: by, p: pressure }];
+    const qx = Math.round(bx * 10) * 0.1;
+    const qy = Math.round(by * 10) * 0.1;
+    const qp = Math.round(pressure * 100) * 0.01;
+    points = [{ x: qx, y: qy, p: qp }];
 
     const ctx = getDrawCtx();
     if (!ctx) return;
@@ -56,15 +59,18 @@ const Drawing = (() => {
     const curCol = (typeof App !== 'undefined') ? App.currentColor : '#ffffff';
 
     if (tool === 'eraser') {
+      if (typeof Canvas !== 'undefined' && Canvas.beginEraseSession) {
+        Canvas.beginEraseSession();
+      }
       const eSize = (typeof App !== 'undefined' && App.eraserSize) ? App.eraserSize : penSz * 8;
       ctx.globalCompositeOperation = 'destination-out';
       ctx.lineWidth   = eSize;
       ctx.fillStyle   = 'rgba(0,0,0,1)';
       ctx.beginPath();
-      ctx.arc(bx, by, eSize / 2, 0, Math.PI * 2);
+      ctx.arc(qx, qy, eSize * 0.5, 0, Math.PI * 2);
       ctx.fill();
       if (typeof Canvas !== 'undefined' && Canvas.eraseAtPoint) {
-        Canvas.eraseAtPoint(bx, by, eSize / 2);
+        Canvas.eraseAtPoint(qx, qy, eSize * 0.5);
       }
     } else if (tool === 'highlighter') {
       ctx.globalCompositeOperation = 'source-over';
@@ -73,14 +79,14 @@ const Drawing = (() => {
       const alphaCol = (typeof curCol === 'string' && curCol.startsWith('#') && curCol.length === 7) ? curCol + '60' : curCol;
       ctx.fillStyle = alphaCol;
       ctx.beginPath();
-      ctx.arc(bx, by, hSize / 2, 0, Math.PI * 2);
+      ctx.arc(qx, qy, hSize * 0.5, 0, Math.PI * 2);
       ctx.fill();
     } else {
       ctx.globalCompositeOperation = 'source-over';
       ctx.lineWidth = penSz;
       ctx.fillStyle = curCol;
       ctx.beginPath();
-      ctx.arc(bx, by, penSz / 2, 0, Math.PI * 2);
+      ctx.arc(qx, qy, penSz * 0.5, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -89,9 +95,17 @@ const Drawing = (() => {
   function continueStrokeAt(bx, by, pressure = 0.5) {
     if (!isDrawing) return;
     const lastPt = points[points.length - 1];
-    if (lastPt && Math.hypot(bx - lastPt.x, by - lastPt.y) < 0.15) return;
+    if (lastPt) {
+      const dx = bx - lastPt.x;
+      const dy = by - lastPt.y;
+      // High-precision distance filter: drops micro-jitter < 0.8px, preserving crisp small math formulas
+      if (dx * dx + dy * dy < 0.64) return;
+    }
 
-    points.push({ x: bx, y: by, p: pressure });
+    const qx = Math.round(bx * 10) * 0.1;
+    const qy = Math.round(by * 10) * 0.1;
+    const qp = Math.round(pressure * 100) * 0.01;
+    points.push({ x: qx, y: qy, p: qp });
 
     const ctx = getDrawCtx();
     if (!ctx) return;
@@ -115,7 +129,7 @@ const Drawing = (() => {
       ctx.lineWidth   = eSize;
       ctx.strokeStyle = 'rgba(0,0,0,1)';
       if (typeof Canvas !== 'undefined' && Canvas.eraseAtPoint) {
-        Canvas.eraseAtPoint(bx, by, eSize / 2);
+        Canvas.eraseAtPoint(qx, qy, eSize * 0.5);
       }
     } else if (tool === 'highlighter') {
       ctx.globalCompositeOperation = 'source-over';
@@ -131,16 +145,18 @@ const Drawing = (() => {
     if (points.length >= 3) {
       const n = points.length;
       const p0 = points[n - 3], p1 = points[n - 2], p2 = points[n - 1];
-      const midPrev = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
-      const midCurr = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+      const midPrevX = (p0.x + p1.x) * 0.5;
+      const midPrevY = (p0.y + p1.y) * 0.5;
+      const midCurrX = (p1.x + p2.x) * 0.5;
+      const midCurrY = (p1.y + p2.y) * 0.5;
       ctx.beginPath();
-      ctx.moveTo(midPrev.x, midPrev.y);
-      ctx.quadraticCurveTo(p1.x, p1.y, midCurr.x, midCurr.y);
+      ctx.moveTo(midPrevX, midPrevY);
+      ctx.quadraticCurveTo(p1.x, p1.y, midCurrX, midCurrY);
       ctx.stroke();
     } else if (points.length === 2) {
       ctx.beginPath();
       ctx.moveTo(points[0].x, points[0].y);
-      ctx.lineTo(bx, by);
+      ctx.lineTo(qx, qy);
       ctx.stroke();
     }
     ctx.restore();
@@ -165,8 +181,8 @@ const Drawing = (() => {
         });
       }
     } else if (tool === 'eraser') {
-      if (typeof Canvas !== 'undefined' && Canvas.saveHistory) {
-        Canvas.saveHistory();
+      if (typeof Canvas !== 'undefined' && Canvas.endEraseSession) {
+        Canvas.endEraseSession();
       }
     }
 
@@ -555,6 +571,7 @@ const Drawing = (() => {
     previewLine, commitLine,
     placeText, editText, cancelText,
     touchStart, touchMove, touchEnd,
-    clearDrawings
+    clearDrawings,
+    isDrawingActive: () => isDrawing
   };
 })();

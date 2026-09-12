@@ -49,9 +49,19 @@ const BoardClipboard = (() => {
   // ─────────────────────────────────────────────────────────────────────────────
 
   function getStrokeBounds(s) {
-    if (!s || !s.points || s.points.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
+    if (!s) return { x: 0, y: 0, w: 0, h: 0 };
+    const pad = Math.max(2, (s.size || 3) / 2);
+    if (s._bbox) {
+      return {
+        x: s._bbox.minX - pad,
+        y: s._bbox.minY - pad,
+        w: Math.max(1, (s._bbox.maxX - s._bbox.minX) + pad * 2),
+        h: Math.max(1, (s._bbox.maxY - s._bbox.minY) + pad * 2)
+      };
+    }
+    const pts = s.pts || s.points;
+    if (!pts || pts.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    const pts = s.points;
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
       if (p.x < minX) minX = p.x;
@@ -59,7 +69,7 @@ const BoardClipboard = (() => {
       if (p.x > maxX) maxX = p.x;
       if (p.y > maxY) maxY = p.y;
     }
-    const pad = Math.max(2, (s.size || 3) / 2);
+    s._bbox = { minX, minY, maxX, maxY };
     return {
       x: minX - pad,
       y: minY - pad,
@@ -144,11 +154,18 @@ const BoardClipboard = (() => {
   }
 
   function translateStroke(s, dx, dy) {
-    if (Array.isArray(s.points)) {
-      for (let i = 0; i < s.points.length; i++) {
-        s.points[i].x += dx;
-        s.points[i].y += dy;
+    const pts = s.pts || s.points;
+    if (Array.isArray(pts)) {
+      for (let i = 0; i < pts.length; i++) {
+        pts[i].x += dx;
+        pts[i].y += dy;
       }
+    }
+    if (s._bbox) {
+      s._bbox.minX += dx;
+      s._bbox.maxX += dx;
+      s._bbox.minY += dy;
+      s._bbox.maxY += dy;
     }
   }
 
@@ -164,12 +181,22 @@ const BoardClipboard = (() => {
 
     for (let i = strokes.length - 1; i >= 0; i--) {
       const s = strokes[i];
-      if (!s.points || s.points.length === 0) continue;
       const strokeR = (s.size || 3) / 2;
       const thresh = strokeR + tol;
-      for (let j = 0; j < s.points.length; j++) {
-        const p = s.points[j];
-        if (Math.hypot(p.x - bx, p.y - by) <= thresh) {
+      if (s._bbox) {
+        if (bx < s._bbox.minX - thresh || bx > s._bbox.maxX + thresh ||
+            by < s._bbox.minY - thresh || by > s._bbox.maxY + thresh) {
+          continue;
+        }
+      }
+      const pts = s.pts || s.points;
+      if (!pts || pts.length === 0) continue;
+      const threshSq = thresh * thresh;
+      for (let j = 0; j < pts.length; j++) {
+        const p = pts[j];
+        const dx = p.x - bx;
+        const dy = p.y - by;
+        if ((dx * dx + dy * dy) <= threshSq) {
           return s;
         }
       }
@@ -304,13 +331,12 @@ const BoardClipboard = (() => {
     // Hit-test strokes (handwriting, pen sketches)
     for (let i = 0; i < allStrokes.length; i++) {
       const st = allStrokes[i];
-      if (!st.points || st.points.length === 0) continue;
+      const pts = st.pts || st.points;
+      if (!pts || pts.length === 0) continue;
 
       if (!st.id) {
         st.id = 'strk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
       }
-
-      const pts = st.points;
       if (pts.length <= 4) {
         let anyIn = false;
         for (let p of pts) {
@@ -422,6 +448,8 @@ const BoardClipboard = (() => {
   // MOVE ENGINE (ZERO-DRIFT GROUP TRANSLATION)
   // ─────────────────────────────────────────────────────────────────────────────
 
+  let moveRaf = null;
+
   function startMoveSelected(pos) {
     if (!hasSelection()) return;
     isDraggingSelection = true;
@@ -432,10 +460,14 @@ const BoardClipboard = (() => {
       orig: JSON.parse(JSON.stringify(s))
     }));
 
-    dragInitialStrokes = selectedStrokes.map(st => ({
-      ref: st,
-      origPoints: st.points.map(p => ({ x: p.x, y: p.y, p: p.p }))
-    }));
+    dragInitialStrokes = selectedStrokes.map(st => {
+      const pts = st.pts || st.points || [];
+      return {
+        ref: st,
+        origPoints: pts.map(p => ({ x: p.x, y: p.y, p: p.p })),
+        origBbox: st._bbox ? { ...st._bbox } : null
+      };
+    });
 
     dragInitialBounds = { ...selectionBounds };
     hideSelectionToolbar();
@@ -474,22 +506,35 @@ const BoardClipboard = (() => {
     for (let i = 0; i < dragInitialStrokes.length; i++) {
       const item = dragInitialStrokes[i];
       const st = item.ref;
+      const pts = st.pts || st.points;
       const origPts = item.origPoints;
-      for (let j = 0; j < origPts.length; j++) {
-        st.points[j].x = origPts[j].x + dx;
-        st.points[j].y = origPts[j].y + dy;
+      if (pts && origPts) {
+        for (let j = 0; j < origPts.length; j++) {
+          pts[j].x = origPts[j].x + dx;
+          pts[j].y = origPts[j].y + dy;
+        }
+      }
+      if (st._bbox && item.origBbox) {
+        st._bbox.minX = item.origBbox.minX + dx;
+        st._bbox.maxX = item.origBbox.maxX + dx;
+        st._bbox.minY = item.origBbox.minY + dy;
+        st._bbox.maxY = item.origBbox.maxY + dy;
       }
     }
 
     selectionBounds.x = dragInitialBounds.x + dx;
     selectionBounds.y = dragInitialBounds.y + dy;
 
-    if (typeof Canvas !== 'undefined') {
-      if (Canvas.renderShapes) Canvas.renderShapes();
-      if (Canvas.renderStrokes) Canvas.renderStrokes();
+    if (!moveRaf) {
+      moveRaf = requestAnimationFrame(() => {
+        moveRaf = null;
+        if (typeof Canvas !== 'undefined') {
+          if (Canvas.renderShapes) Canvas.renderShapes();
+          if (Canvas.renderStrokes) Canvas.renderStrokes();
+        }
+        renderSelectionOverlay();
+      });
     }
-
-    renderSelectionOverlay();
   }
 
   function endMoveSelected() {
@@ -499,6 +544,17 @@ const BoardClipboard = (() => {
     dragInitialShapes = [];
     dragInitialStrokes = [];
     dragInitialBounds = null;
+
+    if (moveRaf) {
+      cancelAnimationFrame(moveRaf);
+      moveRaf = null;
+    }
+
+    // Ensure final state is drawn
+    if (typeof Canvas !== 'undefined') {
+      if (Canvas.renderShapes) Canvas.renderShapes();
+      if (Canvas.renderStrokes) Canvas.renderStrokes();
+    }
 
     // Recalculate exact bounds
     selectionBounds = computeCombinedBounds(selectedShapes, selectedStrokes);
@@ -922,13 +978,16 @@ const BoardClipboard = (() => {
     if (zone) {
       zone.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        showContextMenu(e.clientX, e.clientY);
-      });
-      zone.addEventListener('pointermove', (e) => {
         if (typeof Canvas !== 'undefined' && Canvas.getBoardPos) {
           lastPointerPos = Canvas.getBoardPos(e);
         }
+        showContextMenu(e.clientX, e.clientY);
       });
+      zone.addEventListener('pointerdown', (e) => {
+        if (typeof Canvas !== 'undefined' && Canvas.getBoardPos) {
+          lastPointerPos = Canvas.getBoardPos(e);
+        }
+      }, { passive: true });
     }
   }
 

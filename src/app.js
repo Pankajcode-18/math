@@ -235,8 +235,6 @@ const App = (() => {
     if (!pages[currentPage]) return;
     pages[currentPage].shapes       = (typeof Canvas !== 'undefined' && Canvas.getShapes) ? Canvas.getShapes() : [];
     pages[currentPage].strokes      = (typeof Canvas !== 'undefined' && Canvas.getStrokes) ? Canvas.getStrokes() : [];
-    pages[currentPage].drawData     = (typeof Canvas !== 'undefined' && Canvas.getDrawData) ? Canvas.getDrawData() : null;
-    pages[currentPage].drawDataUrl  = (typeof Canvas !== 'undefined' && Canvas.getDrawDataUrl) ? Canvas.getDrawDataUrl() : null;
     pages[currentPage].bgImage      = (typeof Canvas !== 'undefined' && Canvas.getBgImage) ? Canvas.getBgImage() : null;
     pages[currentPage].boardColorId = (typeof Canvas !== 'undefined' && Canvas.getBoardColorId) ? Canvas.getBoardColorId() : null;
     pages[currentPage].history      = (typeof Canvas !== 'undefined' && Canvas.getHistory) ? Canvas.getHistory() : [];
@@ -248,17 +246,12 @@ const App = (() => {
     if (pages[currentPage].boardColorId && typeof Canvas !== 'undefined' && Canvas.setBoardColor) {
       Canvas.setBoardColor(pages[currentPage].boardColorId);
     }
-    const drawData = pages[currentPage].drawData;
-    // Only use ImageData if it's a real ImageData instance (not {} from JSON parse)
-    const drawSrc = (drawData instanceof ImageData)
-      ? drawData
-      : (pages[currentPage].drawDataUrl || null);
     const strokes = pages[currentPage].strokes || [];
     const hist = pages[currentPage].history || [];
     const redoStk = pages[currentPage].redoStack || [];
     Canvas.loadPageState(
       pages[currentPage].shapes,
-      drawSrc,
+      pages[currentPage].drawDataUrl || null,
       pages[currentPage].bgImage || null,
       strokes,
       hist,
@@ -709,7 +702,7 @@ const App = (() => {
       }
       Canvas.loadPageState(
         pages[i].shapes,
-        pages[i].drawData,
+        pages[i].drawDataUrl || null,
         pages[i].bgImage || null,
         pages[i].strokes || [],
         pages[i].history || [],
@@ -729,7 +722,7 @@ const App = (() => {
     }
     Canvas.loadPageState(
       pages[savedPage].shapes,
-      pages[savedPage].drawData,
+      pages[savedPage].drawDataUrl || null,
       pages[savedPage].bgImage || null,
       pages[savedPage].strokes || [],
       pages[savedPage].history || [],

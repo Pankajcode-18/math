@@ -635,28 +635,106 @@ const Canvas = (() => {
     renderStrokes();
   }
 
+  function computeStrokeBounds(s) {
+    if (!s || !s.points || s.points.length === 0) {
+      s._bbox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+      return s._bbox;
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const pts = s.points;
+    for (let i = 0; i < pts.length; i++) {
+      const px = pts[i].x, py = pts[i].y;
+      if (px < minX) minX = px;
+      if (py < minY) minY = py;
+      if (px > maxX) maxX = px;
+      if (py > maxY) maxY = py;
+    }
+    const pad = Math.max(2, (s.size || 3) * 0.5);
+    s._bbox = {
+      minX: minX - pad,
+      minY: minY - pad,
+      maxX: maxX + pad,
+      maxY: maxY + pad
+    };
+    return s._bbox;
+  }
+
   function addStroke(stroke) {
     if (stroke && stroke.points && stroke.points.length > 0) {
       if (!stroke.id) stroke.id = 'strk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+      computeStrokeBounds(stroke);
       strokes.push(stroke);
-      saveHistory();
+      pushHistoryAction({ type: 'add-stroke', stroke });
     }
   }
 
+  let activeEraseSession = null;
+
+  function beginEraseSession() {
+    activeEraseSession = { erased: [] };
+  }
+
+  function endEraseSession() {
+    if (activeEraseSession && activeEraseSession.erased.length > 0) {
+      pushHistoryAction({
+        type: 'erase-strokes',
+        strokes: activeEraseSession.erased
+      });
+    }
+    activeEraseSession = null;
+  }
+
   function eraseAtPoint(bx, by, radius) {
-    let changed = false;
-    strokes = strokes.filter(s => {
-      const strokeR = (s.size || 3) / 2;
+    let anyErased = false;
+    const remaining = [];
+    const justErased = [];
+
+    for (let i = 0; i < strokes.length; i++) {
+      const s = strokes[i];
+      const strokeR = (s.size || 3) * 0.5;
       const threshold = radius + strokeR;
-      const hit = s.points.some(p => Math.hypot(p.x - bx, p.y - by) <= threshold);
-      if (hit) {
-        changed = true;
-        return false;
+
+      // 1. Spatial Fast-Reject using precomputed bounding box
+      if (!s._bbox) computeStrokeBounds(s);
+      if (s._bbox) {
+        if (bx + threshold < s._bbox.minX ||
+            bx - threshold > s._bbox.maxX ||
+            by + threshold < s._bbox.minY ||
+            by - threshold > s._bbox.maxY) {
+          remaining.push(s);
+          continue;
+        }
       }
-      return true;
-    });
-    if (changed) {
-      saveHistory();
+
+      // 2. Point-level hit test without sqrt
+      let hit = false;
+      const pts = s.points;
+      const threshSq = threshold * threshold;
+      for (let j = 0; j < pts.length; j++) {
+        const dx = pts[j].x - bx;
+        const dy = pts[j].y - by;
+        if (dx * dx + dy * dy <= threshSq) {
+          hit = true;
+          break;
+        }
+      }
+
+      if (hit) {
+        anyErased = true;
+        justErased.push(s);
+        if (activeEraseSession) {
+          activeEraseSession.erased.push(s);
+        }
+      } else {
+        remaining.push(s);
+      }
+    }
+
+    if (anyErased) {
+      strokes = remaining;
+      if (!activeEraseSession) {
+        pushHistoryAction({ type: 'erase-strokes', strokes: justErased });
+      }
     }
   }
 
@@ -1148,18 +1226,40 @@ const Canvas = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // HISTORY
+  // HIGH-PERFORMANCE ACTION-BASED HISTORY ENGINE
+  // Zero JSON stringification on strokes, zero GC pauses
   // ─────────────────────────────────────────────
+  function pushHistoryAction(action) {
+    history.push(action);
+    if (history.length > 50) {
+      history.shift();
+    }
+    redoStack = [];
+    if (typeof UI !== 'undefined' && UI.updateStatus) {
+      UI.updateStatus();
+    }
+  }
+
+  function cloneShape(s) {
+    if (!s) return s;
+    if (s.points && Array.isArray(s.points)) {
+      return Object.assign({}, s, { points: s.points.map(p => ({ x: p.x, y: p.y })) });
+    }
+    if (s.colWidths) {
+      return Object.assign({}, s, { colWidths: [...s.colWidths], rowHeights: [...s.rowHeights] });
+    }
+    return Object.assign({}, s);
+  }
+
+  // Lightweight shape history: only tracks the small shapes array (never serializes strokes)
   function saveHistory() {
     try {
-      const entry = {
-        shapes: JSON.parse(JSON.stringify(shapes)),
-        strokes: JSON.parse(JSON.stringify(strokes)),
+      const shapesCopy = shapes.map(cloneShape);
+      pushHistoryAction({
+        type: 'shapes-snapshot',
+        shapes: shapesCopy,
         bgImage: currentBgImage
-      };
-      history.push(JSON.stringify(entry));
-      if (history.length > 50) history.shift();
-      redoStack = [];
+      });
     } catch (e) {
       console.error('saveHistory error', e);
     }
@@ -1168,7 +1268,7 @@ const Canvas = (() => {
   function restoreHistoryEntry(entryJson) {
     if (!entryJson) return;
     try {
-      const parsed = JSON.parse(entryJson);
+      const parsed = (typeof entryJson === 'string') ? JSON.parse(entryJson) : entryJson;
       if (Array.isArray(parsed)) {
         shapes = parsed;
       } else if (parsed && typeof parsed === 'object') {
@@ -1193,20 +1293,120 @@ const Canvas = (() => {
 
   function undo() {
     if (!history.length) return;
-    redoStack.push(JSON.stringify({
-      shapes: JSON.parse(JSON.stringify(shapes)),
-      strokes: JSON.parse(JSON.stringify(strokes))
-    }));
-    restoreHistoryEntry(history.pop());
+    const action = history.pop();
+
+    // Fallback for legacy string snapshots
+    if (typeof action === 'string') {
+      redoStack.push(JSON.stringify({
+        shapes: shapes.map(cloneShape),
+        strokes: strokes.slice(),
+        bgImage: currentBgImage
+      }));
+      restoreHistoryEntry(action);
+      return;
+    }
+
+    if (action.type === 'add-stroke') {
+      const targetId = action.stroke.id;
+      const idx = strokes.findIndex(s => s.id === targetId);
+      if (idx !== -1) {
+        const removed = strokes.splice(idx, 1)[0];
+        redoStack.push({ type: 'add-stroke', stroke: removed });
+        renderStrokes();
+      }
+    } else if (action.type === 'erase-strokes') {
+      strokes.push(...action.strokes);
+      action.strokes.forEach(computeStrokeBounds);
+      redoStack.push({ type: 'erase-strokes', strokes: action.strokes });
+      renderStrokes();
+    } else if (action.type === 'shapes-snapshot') {
+      redoStack.push({
+        type: 'shapes-snapshot',
+        shapes: shapes.map(cloneShape),
+        bgImage: currentBgImage
+      });
+      shapes = (action.shapes || []).map(cloneShape);
+      if ('bgImage' in action) setBgImage(action.bgImage || null);
+      selected = null;
+      renderShapes();
+    } else if (action.type === 'clear-board') {
+      redoStack.push({
+        type: 'clear-board',
+        shapes: shapes.map(cloneShape),
+        strokes: strokes.slice(),
+        bgImage: currentBgImage
+      });
+      shapes = (action.shapes || []).map(cloneShape);
+      strokes = (action.strokes || []).slice();
+      strokes.forEach(computeStrokeBounds);
+      if ('bgImage' in action) setBgImage(action.bgImage || null);
+      selected = null;
+      renderShapes();
+      renderStrokes();
+    }
+
+    if (typeof BoardClipboard !== 'undefined' && BoardClipboard.clearSelection) {
+      BoardClipboard.clearSelection();
+    }
+    UI.updateStatus();
+    UI.hidePropPanel();
   }
 
   function redo() {
     if (!redoStack.length) return;
-    history.push(JSON.stringify({
-      shapes: JSON.parse(JSON.stringify(shapes)),
-      strokes: JSON.parse(JSON.stringify(strokes))
-    }));
-    restoreHistoryEntry(redoStack.pop());
+    const action = redoStack.pop();
+
+    // Fallback for legacy string snapshots
+    if (typeof action === 'string') {
+      history.push(JSON.stringify({
+        shapes: shapes.map(cloneShape),
+        strokes: strokes.slice(),
+        bgImage: currentBgImage
+      }));
+      restoreHistoryEntry(action);
+      return;
+    }
+
+    if (action.type === 'add-stroke') {
+      computeStrokeBounds(action.stroke);
+      strokes.push(action.stroke);
+      history.push({ type: 'add-stroke', stroke: action.stroke });
+      renderStrokes();
+    } else if (action.type === 'erase-strokes') {
+      const ids = new Set(action.strokes.map(s => s.id));
+      strokes = strokes.filter(s => !ids.has(s.id));
+      history.push({ type: 'erase-strokes', strokes: action.strokes });
+      renderStrokes();
+    } else if (action.type === 'shapes-snapshot') {
+      history.push({
+        type: 'shapes-snapshot',
+        shapes: shapes.map(cloneShape),
+        bgImage: currentBgImage
+      });
+      shapes = (action.shapes || []).map(cloneShape);
+      if ('bgImage' in action) setBgImage(action.bgImage || null);
+      selected = null;
+      renderShapes();
+    } else if (action.type === 'clear-board') {
+      history.push({
+        type: 'clear-board',
+        shapes: shapes.map(cloneShape),
+        strokes: strokes.slice(),
+        bgImage: currentBgImage
+      });
+      shapes = [];
+      strokes = [];
+      setBgImage(null);
+      selected = null;
+      renderShapes();
+      renderStrokes();
+    }
+
+    if (typeof BoardClipboard !== 'undefined' && BoardClipboard.clearSelection) {
+      BoardClipboard.clearSelection();
+    }
+    UI.updateStatus();
+    UI.hidePropPanel();
   }
 
   // ─────────────────────────────────────────────
@@ -1507,7 +1707,12 @@ const Canvas = (() => {
   }
 
   function clearAll() {
-    saveHistory();
+    pushHistoryAction({
+      type: 'clear-board',
+      shapes: shapes.map(cloneShape),
+      strokes: strokes.slice(),
+      bgImage: currentBgImage
+    });
     shapes = [];
     strokes = [];
     selected = null;
@@ -1662,14 +1867,23 @@ const Canvas = (() => {
       GraphObject.openEditor(hit);
     }
   }
+  let cursorPosRaf = null;
   function onCursorPos(e) {
-    const pos = getPosFromEvent(e);
-    const sb  = document.getElementById('sb-pos');
-    if (sb) sb.innerHTML = `x:<b>${Math.round(pos.x)}</b> y:<b>${Math.round(pos.y)}</b>`;
-    if (selected && selected.type === 'graph' && typeof GraphObject !== 'undefined' && !dragging) {
-      if (GraphObject.handlePointerMove(selected, pos.x, pos.y)) {
-        renderShapes();
-      }
+    // Skip updating status bar while actively drawing to maximize frame budget for handwriting
+    if (typeof Drawing !== 'undefined' && Drawing.isDrawingActive && Drawing.isDrawingActive()) return;
+
+    if (!cursorPosRaf) {
+      cursorPosRaf = requestAnimationFrame(() => {
+        cursorPosRaf = null;
+        const pos = getPosFromEvent(e);
+        const sb  = document.getElementById('sb-pos');
+        if (sb) sb.textContent = `x:${Math.round(pos.x)} y:${Math.round(pos.y)}`;
+        if (selected && selected.type === 'graph' && typeof GraphObject !== 'undefined' && !dragging) {
+          if (GraphObject.handlePointerMove(selected, pos.x, pos.y)) {
+            renderShapes();
+          }
+        }
+      });
     }
   }
 
@@ -2441,10 +2655,14 @@ const Canvas = (() => {
   }
   function loadPageState(savedShapes, savedDrawData, savedBgImage, savedStrokes, savedHistory, savedRedo) {
     shapes = savedShapes ? JSON.parse(JSON.stringify(savedShapes)) : [];
-    strokes = savedStrokes ? JSON.parse(JSON.stringify(savedStrokes)) : [];
+    strokes = (savedStrokes && Array.isArray(savedStrokes)) ? savedStrokes.map(s => {
+      const copy = { ...s, pts: s.pts ? s.pts.slice() : [] };
+      if (!copy._bbox) computeStrokeBounds(copy);
+      return copy;
+    }) : [];
     selected = null;
-    history = (savedHistory && Array.isArray(savedHistory)) ? JSON.parse(JSON.stringify(savedHistory)) : [];
-    redoStack = (savedRedo && Array.isArray(savedRedo)) ? JSON.parse(JSON.stringify(savedRedo)) : [];
+    history = (savedHistory && Array.isArray(savedHistory)) ? savedHistory.slice() : [];
+    redoStack = (savedRedo && Array.isArray(savedRedo)) ? savedRedo.slice() : [];
     if (typeof BoardClipboard !== 'undefined' && BoardClipboard.clearSelection) {
       BoardClipboard.clearSelection();
     }
@@ -2598,6 +2816,7 @@ const Canvas = (() => {
     getShapeCount, getDrawCtx, getCanvasSize, getPosFromTouch, getPosFromEvent,
     getBoardPos, getScreenPos, screenToBoard, boardToScreen, applyTransformToCtx, getDPR: () => currentDPR,
     getShapes, getShapesRef, getStrokes, getStrokesRef, setStrokes, addStroke, renderStrokes, eraseAtPoint,
+    beginEraseSession, endEraseSession, computeStrokeBounds,
     getDrawData, getDrawDataUrl, loadPageState,
     adjustFontSize, editSelectedText, nudgeSelected, updateFloatingToolbar,
     setTextFontFamily, setTextFontSize, toggleTextBold, cycleTextAlign,
