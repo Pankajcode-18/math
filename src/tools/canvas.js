@@ -864,9 +864,7 @@ const Canvas = (() => {
   }
 
   function getActiveTextTarget() {
-    const editor = document.getElementById('text-editor-box');
-    const ta     = document.getElementById('active-textbox-input');
-    if (editor && ta) return { type: 'editor', editor, ta };
+    if (document.getElementById('text-editor-box')) return null;
     if (selected && selected.type === 'text-block') return { type: 'shape', shape: selected };
     return null;
   }
@@ -883,40 +881,18 @@ const Canvas = (() => {
     }
     bar.classList.remove('hidden');
 
-    let curFont = 'Noto Sans, sans-serif';
-    let curSize = 24;
-    let curBold = false;
-    let curColor = '#ffffff';
-    let curHighlight = false;
-    let curLocked = false;
-    let boxX = 0, boxY = 0, boxW = 200, boxH = 40;
+    const s = target.shape;
+    const curFont = s.fontFamily || 'Noto Sans, sans-serif';
+    const curSize = s.fontSize || 24;
+    const curBold = !!s.bold;
+    const curColor = s.color || '#ffffff';
+    const curHighlight = !!s.highlight;
+    const curLocked = !!s.locked;
 
-    if (target.type === 'editor') {
-      curFont = target.ta.style.fontFamily || 'Noto Sans, sans-serif';
-      curSize = parseInt(target.ta.style.fontSize) || 24;
-      curBold = target.ta.style.fontWeight === '700';
-      curColor = target.ta.style.color || '#ffffff';
-      curHighlight = target.editor.dataset.highlight === 'true';
-      const r = target.editor.getBoundingClientRect();
-      const zoneR = document.getElementById('canvas-zone')?.getBoundingClientRect() || { left: 0, top: 0 };
-      boxX = r.left - zoneR.left;
-      boxY = r.top - zoneR.top;
-      boxW = r.width;
-      boxH = r.height;
-    } else {
-      const s = target.shape;
-      curFont = s.fontFamily || 'Noto Sans, sans-serif';
-      curSize = s.fontSize || 24;
-      curBold = !!s.bold;
-      curColor = s.color || '#ffffff';
-      curHighlight = !!s.highlight;
-      curLocked = !!s.locked;
-      const b = Shapes.getBounds(s);
-      boxX = b.x * zoomLevel + panX;
-      boxY = b.y * zoomLevel + panY;
-      boxW = b.w * zoomLevel;
-      boxH = b.h * zoomLevel;
-    }
+    const b = (typeof Shapes !== 'undefined' && Shapes.getBounds) ? Shapes.getBounds(s) : { x: s.x, y: s.y, w: s.w || 100, h: s.h || 40 };
+    const sp = boardToScreen(b.x, b.y);
+    const screenW = (b.w || 100) * zoomLevel;
+    const screenH = (b.h || 40) * zoomLevel;
 
     // Synchronize UI widgets
     const selFont = document.getElementById('tft-font-select');
@@ -944,13 +920,21 @@ const Canvas = (() => {
     const btnLock = document.getElementById('tft-lock-btn');
     if (btnLock) btnLock.classList.toggle('active', curLocked);
 
-    // Position toolbar right above box
+    // Position toolbar above box; if space is tight, position below
     const zone = document.getElementById('canvas-zone');
     const zw = zone ? zone.offsetWidth : window.innerWidth;
-    const sp = boardToScreen(boxX, boxY);
-    let top = sp.y - 48;
-    if (top < 10) top = sp.y + (boxH * zoomLevel) + 12;
-    let left = Math.max(12, Math.min(zw - 580, sp.x));
+    const zh = zone ? zone.offsetHeight : window.innerHeight;
+    const barW = bar.offsetWidth || 560;
+    const barH = bar.offsetHeight || 44;
+
+    let top = sp.y - barH - 10;
+    if (top < 12) {
+      top = sp.y + screenH + 12;
+      if (top + barH > zh - 12) {
+        top = Math.max(12, zh - barH - 12);
+      }
+    }
+    let left = Math.max(12, Math.min(zw - barW - 16, sp.x));
     bar.style.top = top + 'px';
     bar.style.left = left + 'px';
   }
@@ -1153,7 +1137,7 @@ const Canvas = (() => {
     if (!target || target.type !== 'shape') return;
     saveHistory();
     const clone = JSON.parse(JSON.stringify(target.shape));
-    clone.id = Date.now();
+    clone.id = 'txt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
     clone.x += 24;
     clone.y += 24;
     shapes.push(clone);
@@ -1165,10 +1149,12 @@ const Canvas = (() => {
 
   function copySelectedText() {
     const target = getActiveTextTarget();
-    if (!target) return;
-    const text = target.type === 'editor' ? target.ta.value : target.shape.text;
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text);
+    if (!target || target.type !== 'shape') return;
+    if (typeof BoardClipboard !== 'undefined' && BoardClipboard.copy) {
+      BoardClipboard.selectSingleShape(target.shape);
+      BoardClipboard.copy();
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(target.shape.text || '');
       App.showToast('Copied text to clipboard');
     }
     const m = document.getElementById('tft-more-dropdown');
@@ -1190,24 +1176,7 @@ const Canvas = (() => {
   }
 
   function showToolbarForTextTool() {
-    const bar = document.getElementById('text-floating-toolbar');
-    if (!bar) return;
-    const target = getActiveTextTarget();
-    if (target) {
-      updateFloatingToolbar();
-    } else {
-      bar.classList.remove('hidden');
-      const textBtn = document.querySelector('.tool-btn[data-tool="text"]');
-      if (textBtn) {
-        const r = textBtn.getBoundingClientRect();
-        const zoneR = document.getElementById('canvas-zone')?.getBoundingClientRect() || { left: 0, top: 0 };
-        bar.style.top = Math.max(16, (r.top - zoneR.top) - 6) + 'px';
-        bar.style.left = Math.max(16, (r.right - zoneR.left) + 14) + 'px';
-      } else {
-        bar.style.top = '160px';
-        bar.style.left = '76px';
-      }
-    }
+    updateFloatingToolbar();
   }
 
   function editSelectedText() {
@@ -1473,11 +1442,20 @@ const Canvas = (() => {
 
   function addTextShape(x, y, text, color, fontSize) {
     saveHistory();
-    const s = { id:Date.now(), type:'text-block', x, y, text, color, fontSize:fontSize||18, selected:false };
+    const s = {
+      id: 'txt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+      type: 'text-block',
+      x, y,
+      text,
+      color: color || '#ffffff',
+      fontSize: fontSize || 18,
+      selected: false
+    };
     shapes.push(s);
     selectShape(s);
     renderShapes();
     UI.updateStatus();
+    return s;
   }
 
   function setShapes(newShapes) {
@@ -1657,6 +1635,9 @@ const Canvas = (() => {
     if (s) {
       s.selected = true;
       selected = s;
+      if (typeof BoardClipboard !== 'undefined' && BoardClipboard.selectSingleShape) {
+        BoardClipboard.selectSingleShape(s);
+      }
       if (s.type === 'table' && typeof TableTool !== 'undefined') {
         TableTool.showTableContextToolbar(s);
         if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.hideNoteContextToolbar();
@@ -1676,6 +1657,9 @@ const Canvas = (() => {
       if (typeof StickyNotesTool !== 'undefined') {
         StickyNotesTool.hideNoteContextToolbar();
         StickyNotesTool.closeInlineEditor();
+      }
+      if (typeof BoardClipboard !== 'undefined' && BoardClipboard.clearSelection) {
+        BoardClipboard.clearSelection();
       }
     }
     renderShapes();
@@ -2223,8 +2207,11 @@ const Canvas = (() => {
 
     if (tool === 'text') {
       if (hit && hit.type === 'text-block') {
-        selectShape(hit);
-        Drawing.editText(hit);
+        if (selected === hit) {
+          Drawing.editText(hit, getScreenPos(e));
+        } else {
+          selectShape(hit);
+        }
         return;
       } else if (hit && hit.type === 'table' && typeof TableTool !== 'undefined') {
         selectShape(hit);
@@ -2254,6 +2241,17 @@ const Canvas = (() => {
 
       // 2. Shape hit test
       if (hit) {
+        if (hit.type === 'text-block') {
+          if (selected === hit) {
+            Drawing.editText(hit, getScreenPos(e));
+            return;
+          } else {
+            selectShape(hit);
+            dragging = hit;
+            dragOff  = { x: pos.x - hit.x, y: pos.y - hit.y };
+            return;
+          }
+        }
         if (hit.type === 'graph' && typeof GraphObject !== 'undefined') {
           if (GraphObject.handlePointerClick(hit, pos.x, pos.y)) {
             renderShapes();
@@ -2758,49 +2756,177 @@ const Canvas = (() => {
     }
   }
 
-  function snapshot() {
-    const dpr = currentDPR || window.devicePixelRatio || 1;
+  // ─────────────────────────────────────────────
+  // LOGICAL BOARD EXPORT RENDERER
+  // Captures the complete logical document in board coordinates.
+  // Immune to zoom level, pan offset, window size, and Full Screen state.
+  // ─────────────────────────────────────────────
+
+  function getLogicalBoardBounds() {
+    // Baseline document size (always 1920×1080 equivalent in board space)
+    const BASELINE_W = 1920;
+    const BASELINE_H = 1080;
+    const MARGIN = 24;
+
+    let minX = 0, minY = 0, maxX = BASELINE_W, maxY = BASELINE_H;
+
+    // Expand to include all shapes
+    for (let i = 0; i < shapes.length; i++) {
+      const s = shapes[i];
+      let b;
+      try { b = (typeof Shapes !== 'undefined' && Shapes.getBounds) ? Shapes.getBounds(s) : null; } catch(e) { b = null; }
+      if (!b) b = { x: s.x || 0, y: s.y || 0, w: s.w || 100, h: s.h || 40 };
+      if (b.x < minX) minX = b.x;
+      if (b.y < minY) minY = b.y;
+      if (b.x + b.w > maxX) maxX = b.x + b.w;
+      if (b.y + b.h > maxY) maxY = b.y + b.h;
+    }
+
+    // Expand to include all strokes
+    for (let i = 0; i < strokes.length; i++) {
+      const st = strokes[i];
+      const bbox = st._bbox || null;
+      if (bbox) {
+        if (bbox.minX < minX) minX = bbox.minX;
+        if (bbox.minY < minY) minY = bbox.minY;
+        if (bbox.maxX > maxX) maxX = bbox.maxX;
+        if (bbox.maxY > maxY) maxY = bbox.maxY;
+      } else if (st.points && st.points.length > 0) {
+        for (const p of st.points) {
+          if (p.x < minX) minX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y > maxY) maxY = p.y;
+        }
+      }
+    }
+
+    minX -= MARGIN; minY -= MARGIN;
+    maxX += MARGIN; maxY += MARGIN;
+    return { minX, minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  function renderLogicalBoardToCanvas(isJpeg) {
+    const bounds = getLogicalBoardBounds();
+    const { minX, minY, w, h } = bounds;
+    const dpr = Math.max(1.5, currentDPR || window.devicePixelRatio || 1);
+
     const out = document.createElement('canvas');
-    out.width = Math.round(W * dpr);
-    out.height = Math.round(H * dpr);
+    out.width  = Math.round(w * dpr);
+    out.height = Math.round(h * dpr);
     const ctx = out.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    const gc = document.getElementById('grid-canvas');
-    const sc = document.getElementById('shape-canvas');
-    const dc = document.getElementById('draw-canvas');
+
+    // ── 1. Background fill ──
+    ctx.fillStyle = currentBoardColor.bg || '#ffffff';
+    ctx.fillRect(0, 0, out.width, out.height);
+
+    // ── 2. Grid / pattern drawn in logical board coords ──
+    // setTransform(dpr) + translate(-minX,-minY) maps board(minX,minY) → screen(0,0)
+    // so we draw width=w, height=h of board content
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.translate(-minX, -minY);
+    drawBaseGridOn(ctx, w + minX, h + minY);
+    ctx.restore();
+
+    // ── 3. Background image (if any) ──
+    if (bgImageObj && bgImageObj.complete && bgImageObj.naturalWidth > 0) {
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.translate(-minX, -minY);
+      const imgW = bgImageObj.naturalWidth;
+      const imgH = bgImageObj.naturalHeight;
+      // Fit baseline canvas
+      const bW = 1920, bH = 1080;
+      const scale = Math.min(bW / imgW, bH / imgH);
+      const dw = imgW * scale;
+      const dh = imgH * scale;
+      const dx = (bW - dw) / 2;
+      const dy = (bH - dh) / 2;
+      ctx.drawImage(bgImageObj, dx, dy, dw, dh);
+      ctx.restore();
+    }
+
+    // ── 4. Shapes (temporarily clear selected flag so no handles are drawn) ──
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.translate(-minX, -minY);
+    const prevSelected = selected;
+    const selBackup = shapes.map(s => s.selected);
+    shapes.forEach(s => { s.selected = false; });
+    shapes.forEach(s => {
+      try { if (typeof Shapes !== 'undefined' && Shapes.draw) Shapes.draw(ctx, s); } catch(e) {}
+    });
+    shapes.forEach((s, i) => { s.selected = selBackup[i]; });
+    ctx.restore();
+
+    // ── 5. Strokes ──
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.translate(-minX, -minY);
+    for (let i = 0; i < strokes.length; i++) {
+      drawSingleStroke(ctx, strokes[i]);
+    }
+    ctx.restore();
+
+    return { canvas: out, w, h };
+  }
+
+  function snapshot() {
     try {
-      if (gc) ctx.drawImage(gc, 0, 0, W, H);
-      else drawBaseGridOn(ctx, W, H);
-    } catch(e) { drawBaseGridOn(ctx, W, H); }
-    try { if (sc) ctx.drawImage(sc, 0, 0, W, H); } catch(e) {}
-    try { if (dc) ctx.drawImage(dc, 0, 0, W, H); } catch(e) {}
-    try { return out.toDataURL('image/png'); } catch(e) { return ''; }
+      const { canvas } = renderLogicalBoardToCanvas(false);
+      return canvas.toDataURL('image/png');
+    } catch(e) {
+      // Fallback: basic DOM canvas composite
+      const dpr = currentDPR || window.devicePixelRatio || 1;
+      const out = document.createElement('canvas');
+      out.width = Math.round(W * dpr);
+      out.height = Math.round(H * dpr);
+      const ctx = out.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const gc = document.getElementById('grid-canvas');
+      const sc = document.getElementById('shape-canvas');
+      const dc = document.getElementById('draw-canvas');
+      try { if (gc) ctx.drawImage(gc, 0, 0, W, H); else drawBaseGridOn(ctx, W, H); } catch(e2) { drawBaseGridOn(ctx, W, H); }
+      try { if (sc) ctx.drawImage(sc, 0, 0, W, H); } catch(e2) {}
+      try { if (dc) ctx.drawImage(dc, 0, 0, W, H); } catch(e2) {}
+      try { return out.toDataURL('image/png'); } catch(e2) { return ''; }
+    }
   }
 
   // JPEG version for PDF export (smaller, reliable, high-res)
   function snapshotJpeg() {
-    const dpr = currentDPR || window.devicePixelRatio || 1;
-    const out = document.createElement('canvas');
-    out.width = Math.round(W * dpr);
-    out.height = Math.round(H * dpr);
-    const ctx = out.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.fillStyle = currentBoardColor.bg || '#ffffff';
-    ctx.fillRect(0, 0, W, H);
-    const gc = document.getElementById('grid-canvas');
-    const sc = document.getElementById('shape-canvas');
-    const dc = document.getElementById('draw-canvas');
     try {
-      if (gc) ctx.drawImage(gc, 0, 0, W, H);
-      else drawBaseGridOn(ctx, W, H);
-    } catch(e) { drawBaseGridOn(ctx, W, H); }
-    try { if (sc) ctx.drawImage(sc, 0, 0, W, H); } catch(e) {}
-    try { if (dc) ctx.drawImage(dc, 0, 0, W, H); } catch(e) {}
-    try { return out.toDataURL('image/jpeg', 0.95); } catch(e) { return ''; }
+      const { canvas, w, h } = renderLogicalBoardToCanvas(true);
+      // JPEG needs white background (no alpha)
+      const out2 = document.createElement('canvas');
+      out2.width  = canvas.width;
+      out2.height = canvas.height;
+      const ctx2 = out2.getContext('2d');
+      ctx2.fillStyle = currentBoardColor.bg || '#ffffff';
+      ctx2.fillRect(0, 0, out2.width, out2.height);
+      ctx2.drawImage(canvas, 0, 0);
+      return out2.toDataURL('image/jpeg', 0.95);
+    } catch(e) {
+      // Fallback
+      const dpr = currentDPR || window.devicePixelRatio || 1;
+      const out = document.createElement('canvas');
+      out.width = Math.round(W * dpr);
+      out.height = Math.round(H * dpr);
+      const ctx = out.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = currentBoardColor.bg || '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      const gc = document.getElementById('grid-canvas');
+      const sc = document.getElementById('shape-canvas');
+      const dc = document.getElementById('draw-canvas');
+      try { if (gc) ctx.drawImage(gc, 0, 0, W, H); else drawBaseGridOn(ctx, W, H); } catch(e2) { drawBaseGridOn(ctx, W, H); }
+      try { if (sc) ctx.drawImage(sc, 0, 0, W, H); } catch(e2) {}
+      try { if (dc) ctx.drawImage(dc, 0, 0, W, H); } catch(e2) {}
+      try { return out.toDataURL('image/jpeg', 0.95); } catch(e2) { return ''; }
+    }
   }
 
   function getShapeCount() { return shapes.length; }
@@ -2827,6 +2953,7 @@ const Canvas = (() => {
     getBoardColorId: () => currentBoardColor.id, getBoardColor: () => currentBoardColor,
     getBoardBackgrounds: () => BOARD_BACKGROUNDS,
     zoomIn, zoomOut, resetZoom, setZoom, getZoom,
-    handleTwoFingerTouchStart, handleTwoFingerTouchMove, handleTwoFingerTouchEnd
+    handleTwoFingerTouchStart, handleTwoFingerTouchMove, handleTwoFingerTouchEnd,
+    getExportBounds: () => getLogicalBoardBounds()
   };
 })();

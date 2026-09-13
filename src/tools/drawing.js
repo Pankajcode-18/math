@@ -309,10 +309,16 @@ const Drawing = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // TEXT TOOL — Floating editor & shape storage
+  // TEXT TOOL — Clean Typing Mode & Shape Storage
   // ─────────────────────────────────────────────
-  function openTextEditor(boardX, boardY, existingShape) {
+  function openTextEditor(boardX, boardY, existingShape, clickClientPos) {
     closeTextEditor();
+
+    // Ensure the floating formatting toolbar is completely HIDDEN during typing
+    const floatBar = document.getElementById('text-floating-toolbar');
+    if (floatBar) floatBar.classList.add('hidden');
+    const moreMenu = document.getElementById('tft-more-dropdown');
+    if (moreMenu) moreMenu.classList.add('hidden');
 
     const screenPos = (typeof Canvas !== 'undefined' && Canvas.boardToScreen)
       ? Canvas.boardToScreen(boardX, boardY)
@@ -325,17 +331,21 @@ const Drawing = (() => {
     const fontFamily = existingShape ? (existingShape.fontFamily || curToolbarFont) : curToolbarFont;
     const isBold     = existingShape ? !!existingShape.bold : false;
     const align      = existingShape ? (existingShape.align || 'left') : 'left';
+    const zoom       = (typeof Canvas !== 'undefined' && Canvas.getZoom) ? Canvas.getZoom() : 1;
+    const initialW   = existingShape && existingShape.w ? Math.max(160, existingShape.w * zoom) : 220;
 
     const editor = document.createElement('div');
     editor.id = 'text-editor-box';
     editor.className = 'active-board-textbox';
     editor.style.cssText = `
-      position: absolute; left: ${screenPos.x}px; top: ${screenPos.y}px;
-      min-width: 160px; z-index: 100;
+      position: absolute; left: ${screenPos.x - 4}px; top: ${screenPos.y - 4}px;
+      min-width: ${initialW}px; z-index: 100;
       background: transparent;
       border: 1.5px solid #3b82f6;
-      border-radius: 2px; padding: 4px 6px;
+      border-radius: 2px; padding: 2px 4px;
+      box-sizing: border-box;
       touch-action: auto;
+      cursor: text;
     `;
 
     editor.innerHTML = `
@@ -348,7 +358,7 @@ const Drawing = (() => {
     const ta = document.createElement('textarea');
     ta.id = 'active-textbox-input';
     ta.style.cssText = `
-      width: 100%; min-height: ${fontSize + 12}px;
+      width: 100%; min-height: ${fontSize + 10}px;
       background: transparent; border: none; outline: none;
       color: ${color}; font-family: ${fontFamily};
       font-size: ${fontSize}px; font-weight: ${isBold ? '700' : '500'};
@@ -357,7 +367,9 @@ const Drawing = (() => {
       caret-color: #3b82f6;
       touch-action: auto;
       -webkit-user-select: text; user-select: text;
-      padding: 2px 4px; margin: 0;
+      padding: 0; margin: 0;
+      box-sizing: border-box;
+      display: block;
     `;
     ta.placeholder = 'Type here…';
     if (existingShape) {
@@ -368,25 +380,46 @@ const Drawing = (() => {
 
     editor.appendChild(ta);
     const parent = document.getElementById('canvas-viewport') || document.getElementById('canvas-zone');
-    parent.appendChild(editor);
+    if (parent) parent.appendChild(editor);
 
     if (ta.value) {
       ta.style.height = 'auto';
       ta.style.height = ta.scrollHeight + 'px';
     }
 
-    if (typeof Canvas !== 'undefined' && Canvas.updateFloatingToolbar) {
-      Canvas.updateFloatingToolbar();
+    // Clicking anywhere inside the editor box focuses the textarea cleanly
+    editor.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      ta.focus();
+    });
+
+    ta.focus();
+    if (existingShape && !clickClientPos) {
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    } else if (clickClientPos) {
+      try {
+        if (document.caretPositionFromPoint) {
+          const pos = document.caretPositionFromPoint(clickClientPos.clientX, clickClientPos.clientY);
+          if (pos && typeof pos.offset === 'number') {
+            ta.setSelectionRange(pos.offset, pos.offset);
+          }
+        } else if (document.caretRangeFromPoint) {
+          const range = document.caretRangeFromPoint(clickClientPos.clientX, clickClientPos.clientY);
+          if (range) {
+            ta.setSelectionRange(range.startOffset, range.startOffset);
+          }
+        }
+      } catch (err) {}
     }
 
-    setTimeout(() => {
-      ta.focus();
-      if (existingShape) ta.setSelectionRange(ta.value.length, ta.value.length);
-    }, 50);
-
-    function commitAndClose() {
+    let isCommitted = false;
+    function commitAndClose(selectAfterCommit = true) {
+      if (isCommitted) return;
+      isCommitted = true;
       if (existingShape) delete existingShape._editing;
       const text = ta.value.trim();
+      let targetShape = null;
+
       if (text) {
         const curColor  = ta.style.color || color;
         const curSize   = parseInt(ta.style.fontSize) || fontSize;
@@ -406,6 +439,7 @@ const Drawing = (() => {
           existingShape.highlight      = curHigh;
           existingShape.highlightColor = 'rgba(254, 240, 138, 0.45)';
           Canvas.renderShapes();
+          targetShape = existingShape;
         } else {
           const s = Canvas.addTextShape(boardX, boardY, text, curColor, curSize);
           if (s) {
@@ -415,26 +449,46 @@ const Drawing = (() => {
             s.highlight      = curHigh;
             s.highlightColor = 'rgba(254, 240, 138, 0.45)';
             Canvas.renderShapes();
+            targetShape = s;
           }
         }
       } else if (existingShape) {
+        // If user deleted all text, cleanly remove shape
+        Canvas.saveHistory();
+        const allShapes = (Canvas.getShapesRef ? Canvas.getShapesRef() : Canvas.getShapes()) || [];
+        const idx = allShapes.indexOf(existingShape);
+        if (idx !== -1) allShapes.splice(idx, 1);
         Canvas.renderShapes();
       }
+
       closeTextEditor();
+
+      // Transition to State 2 (Object Selected) if requested
+      if (selectAfterCommit && targetShape && typeof Canvas !== 'undefined' && Canvas.selectShape) {
+        Canvas.selectShape(targetShape);
+        if (typeof BoardClipboard !== 'undefined' && BoardClipboard.selectSingleShape) {
+          BoardClipboard.selectSingleShape(targetShape);
+        }
+      }
     }
 
     ta.addEventListener('keydown', e => {
       e.stopPropagation();
-      if (e.key === 'Escape')             { closeTextEditor(); return; }
-      if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); commitAndClose(); }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        commitAndClose(true);
+        return;
+      }
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        commitAndClose(true);
+      }
     });
 
     ta.addEventListener('input', () => {
       ta.style.height = 'auto';
       ta.style.height = ta.scrollHeight + 'px';
-      if (typeof Canvas !== 'undefined' && Canvas.updateFloatingToolbar) {
-        Canvas.updateFloatingToolbar();
-      }
+      // Native smooth typing without triggering board renders or toolbar reflows
     });
 
     function outsideHandler(ev) {
@@ -444,7 +498,7 @@ const Drawing = (() => {
       if (!editor.contains(ev.target)) {
         document.removeEventListener('mousedown', outsideHandler);
         document.removeEventListener('touchstart', outsideHandler);
-        commitAndClose();
+        commitAndClose(false);
       }
     }
     setTimeout(() => {
@@ -468,8 +522,8 @@ const Drawing = (() => {
     }
   }
 
-  function placeText(x, y)  { openTextEditor(x, y, null); }
-  function editText(shape)   { openTextEditor(shape.x, shape.y, shape); }
+  function placeText(x, y)  { openTextEditor(x, y, null, null); }
+  function editText(shape, clickPos) { openTextEditor(shape.x, shape.y, shape, clickPos); }
   function cancelText()      { closeTextEditor(); }
 
   // ─────────────────────────────────────────────

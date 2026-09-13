@@ -693,7 +693,6 @@ const App = (() => {
 
     const savedPage  = currentPage;
     const snapshots  = [];
-    const { W, H }   = Canvas.getCanvasSize();
 
     for (let i = 0; i < pages.length; i++) {
       showToast(`Rendering page ${i + 1} of ${pages.length}…`);
@@ -713,7 +712,11 @@ const App = (() => {
       await new Promise(r => setTimeout(r, 120));
       // Use JPEG (smaller, reliable, 100% native in PDF)
       const dataUrl = Canvas.snapshotJpeg();
-      snapshots.push({ dataUrl, w: W, h: H, label: pages[i].label });
+      // Use logical board bounds so Full Screen / zoom content is never cropped
+      const bounds = (Canvas.getExportBounds) ? Canvas.getExportBounds() : Canvas.getCanvasSize();
+      const pageW = bounds.w || bounds.W || 1920;
+      const pageH = bounds.h || bounds.H || 1080;
+      snapshots.push({ dataUrl, w: pageW, h: pageH, label: pages[i].label });
     }
 
     // Restore original page

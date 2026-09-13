@@ -37,7 +37,10 @@ const BoardClipboard = (() => {
   }
 
   function hasSelection() {
-    return (selectedShapes && selectedShapes.length > 0) || (selectedStrokes && selectedStrokes.length > 0);
+    if ((selectedShapes && selectedShapes.length > 0) || (selectedStrokes && selectedStrokes.length > 0)) return true;
+    // Fallback: Canvas may have a shape selected via its own selectShape()
+    if (typeof Canvas !== 'undefined' && Canvas.getSelected && Canvas.getSelected()) return true;
+    return false;
   }
 
   function hasClipboardData() {
@@ -650,7 +653,13 @@ const BoardClipboard = (() => {
   // ─────────────────────────────────────────────────────────────────────────────
 
   function copy() {
-    if (!hasSelection()) {
+    // Sync from Canvas.getSelected() if our own selection is empty
+    if ((!selectedShapes || selectedShapes.length === 0) && (!selectedStrokes || selectedStrokes.length === 0)) {
+      if (typeof Canvas !== 'undefined' && Canvas.getSelected && Canvas.getSelected()) {
+        selectSingleShape(Canvas.getSelected());
+      }
+    }
+    if (!hasSelection() || selectedShapes.length === 0 && selectedStrokes.length === 0) {
       if (typeof App !== 'undefined' && App.showToast) App.showToast('Nothing selected to copy');
       return;
     }
@@ -764,6 +773,12 @@ const BoardClipboard = (() => {
   }
 
   function duplicate() {
+    // Sync from Canvas.getSelected() if our own selection is empty
+    if ((!selectedShapes || selectedShapes.length === 0) && (!selectedStrokes || selectedStrokes.length === 0)) {
+      if (typeof Canvas !== 'undefined' && Canvas.getSelected && Canvas.getSelected()) {
+        selectSingleShape(Canvas.getSelected());
+      }
+    }
     if (!hasSelection()) return;
 
     if (typeof Canvas !== 'undefined' && Canvas.saveHistory) {
@@ -816,6 +831,12 @@ const BoardClipboard = (() => {
   }
 
   function deleteSelected(showToast = true) {
+    // Sync from Canvas.getSelected() if our own selection is empty
+    if ((!selectedShapes || selectedShapes.length === 0) && (!selectedStrokes || selectedStrokes.length === 0)) {
+      if (typeof Canvas !== 'undefined' && Canvas.getSelected && Canvas.getSelected()) {
+        selectSingleShape(Canvas.getSelected());
+      }
+    }
     if (!hasSelection()) return;
 
     if (typeof Canvas !== 'undefined' && Canvas.saveHistory) {
