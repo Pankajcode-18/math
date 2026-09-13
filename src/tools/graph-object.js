@@ -1013,7 +1013,7 @@ const GraphObject = (() => {
         <!-- Studio Navigation Tabs -->
         <div style="display:flex;background:rgba(8,15,31,0.9);border-bottom:1px solid rgba(255,255,255,0.08);padding:0 14px;">
           <button class="gos-tab active" id="gos-tab-templates" onclick="GraphObject.switchStudioTab('templates')">📐 Templates</button>
-          <button class="gos-tab" id="gos-tab-sliders" onclick="GraphObject.switchStudioTab('sliders')">🎚️ Sliders (a,b,c)</button>
+          <button class="gos-tab" id="gos-tab-sliders" onclick="GraphObject.switchStudioTab('sliders')">🔢 Parameters (a, b, c)</button>
           <button class="gos-tab" id="gos-tab-functions" onclick="GraphObject.switchStudioTab('functions')">📝 Function List</button>
           <button class="gos-tab" id="gos-tab-settings" onclick="GraphObject.switchStudioTab('settings')">⚙️ Axes & Grid</button>
         </div>
@@ -1123,7 +1123,70 @@ const GraphObject = (() => {
     `;
   }
 
-  // Tab 2: Interactive Real-Time Coefficient Sliders
+  // ── Math Educational Insights Helper ──────────────────────────────────────
+  function computeMathInsights(tmpl, params) {
+    const a = params.a !== undefined ? params.a : 1;
+    const b = params.b !== undefined ? params.b : (tmpl === 'exp' || tmpl === 'ln' ? 1 : 0);
+    const c = params.c !== undefined ? params.c : 0;
+    const d = params.d !== undefined ? params.d : 0;
+
+    const round = (num) => Math.round(num * 100) / 100;
+    let items = [];
+
+    if (tmpl === 'quadratic') {
+      if (a > 0) {
+        items.push({ icon: '∪', label: 'Opens Upward', sub: 'Min vertex', color: '#38bdf8' });
+      } else if (a < 0) {
+        items.push({ icon: '∩', label: 'Opens Downward', sub: 'Max vertex', color: '#f43f5e' });
+      } else {
+        items.push({ icon: '—', label: 'Linear Line', sub: 'a = 0', color: '#94a3b8' });
+      }
+
+      if (a !== 0) {
+        const h = -b / (2 * a);
+        const k = a * h * h + b * h + c;
+        items.push({ icon: '📍', label: `Vertex (${round(h)}, ${round(k)})`, color: '#a855f7' });
+      }
+
+      items.push({ icon: '🎯', label: `Y-Intercept (0, ${round(c)})`, color: '#10b981' });
+
+      if (a !== 0) {
+        const disc = b * b - 4 * a * c;
+        if (disc > 0) {
+          items.push({ icon: '✨', label: `2 Real Roots (Δ = ${round(disc)})`, color: '#fbbf24' });
+        } else if (disc === 0) {
+          items.push({ icon: '✨', label: `1 Real Root (Δ = 0)`, color: '#fbbf24' });
+        } else {
+          items.push({ icon: '💤', label: `No Real Roots (Δ < 0)`, color: '#64748b' });
+        }
+      }
+    } else if (tmpl === 'linear') {
+      const slopeDesc = a > 0 ? 'Ascending ↗' : a < 0 ? 'Descending ↘' : 'Horizontal →';
+      items.push({ icon: '📐', label: `Slope m = ${round(a)}`, sub: slopeDesc, color: '#38bdf8' });
+      items.push({ icon: '🎯', label: `Origin (0, 0)`, color: '#10b981' });
+    } else if (tmpl === 'cubic') {
+      if (a !== 0) {
+        const inflX = -b / (3 * a);
+        const inflY = a * inflX * inflX * inflX + b * inflX * inflX + c * inflX + d;
+        items.push({ icon: '〰️', label: `Inflection (${round(inflX)}, ${round(inflY)})`, color: '#a855f7' });
+      }
+      items.push({ icon: '🎯', label: `Y-Intercept (0, ${round(d)})`, color: '#10b981' });
+    } else if (tmpl === 'exp') {
+      items.push({ icon: b > 0 ? '📈' : '📉', label: b > 0 ? 'Exponential Growth' : 'Exponential Decay', color: '#10b981' });
+      items.push({ icon: '🎯', label: `Y-Intercept (0, ${round(a)})`, color: '#38bdf8' });
+      items.push({ icon: '🚧', label: 'Asymptote y = 0', color: '#94a3b8' });
+    } else if (tmpl === 'ln') {
+      items.push({ icon: '🌲', label: 'Domain x > 0', color: '#f43f5e' });
+      if (b !== 0) {
+        items.push({ icon: '🎯', label: `X-Intercept (${round(1 / b)}, 0)`, color: '#10b981' });
+      }
+      items.push({ icon: '🚧', label: 'Asymptote x = 0', color: '#94a3b8' });
+    }
+
+    return items;
+  }
+
+  // Tab 2: Interactive Real-Time Coefficient Parameters (Manual Input, No Sliders)
   function renderSlidersTab(container, g) {
     const tmpl = g.activeTemplate || 'quadratic';
     const params = g.params || { a: 1, b: 0, c: 0, d: 0 };
@@ -1135,36 +1198,126 @@ const GraphObject = (() => {
     else if (tmpl === 'exp') currentFormula = `y = ${formatExponential(params.a, params.b !== undefined ? params.b : 1)}`;
     else if (tmpl === 'ln') currentFormula = `y = ${formatLogarithmic(params.a, params.b !== undefined ? params.b : 1)}`;
 
+    const insights = computeMathInsights(tmpl, params);
+
+    // Contextual role descriptions
+    const aDesc = tmpl === 'linear' 
+      ? { title: 'Coefficient a (Slope / Rate of Change)', sub: 'Controls line steepness: rise over run (m = a)' }
+      : tmpl === 'quadratic'
+      ? { title: 'Coefficient a (Steepness & Curvature)', sub: 'a > 0 opens up ∪, a < 0 opens down ∩; magnitude controls width' }
+      : tmpl === 'cubic'
+      ? { title: 'Coefficient a (Cubic Scale & Steepness)', sub: 'Controls cubic growth and end-behavior steepness' }
+      : tmpl === 'exp'
+      ? { title: 'Coefficient a (Vertical Amplitude / Initial Value)', sub: 'Sets the y-intercept at (0, a) and overall vertical scale' }
+      : { title: 'Coefficient a (Vertical Scaling Factor)', sub: 'Dilates or compresses the curve vertically' };
+
+    const bDesc = tmpl === 'quadratic'
+      ? { title: 'Coefficient b (Horizontal Axis Shift)', sub: 'Shifts parabola line of symmetry: x = -b / (2a)' }
+      : tmpl === 'cubic'
+      ? { title: 'Coefficient b (Quadratic Term / Bend)', sub: 'Shifts inflection point location: x = -b / (3a)' }
+      : tmpl === 'exp'
+      ? { title: 'Coefficient b (Growth / Decay Rate)', sub: 'b > 0 exponential growth, b < 0 exponential decay' }
+      : { title: 'Coefficient b (Horizontal Dilation / Frequency)', sub: 'Compresses curve horizontally; root at x = 1/b' };
+
+    const cDesc = tmpl === 'quadratic'
+      ? { title: 'Coefficient c (Y-Intercept / Vertical Offset)', sub: 'Constant offset: where curve crosses y-axis at (0, c)' }
+      : { title: 'Coefficient c (Linear Slope at Inflection)', sub: 'Instantaneous slope of the curve at inflection' };
+
+    const dDesc = { title: 'Coefficient d (Vertical Constant / Y-Intercept)', sub: 'Translates entire cubic curve vertically at (0, d)' };
+
     container.innerHTML = `
       <!-- Dynamic Live Equation Header Banner -->
-      <div style="background:rgba(56,189,248,0.1);border:1px solid rgba(56,189,248,0.3);border-radius:10px;padding:12px 18px;text-align:center;">
-        <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Current Active Equation</div>
-        <div id="gos-live-formula" style="font-size:22px;font-weight:800;color:#38bdf8;font-family:monospace;letter-spacing:0.02em;">
+      <div style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);border-radius:12px;padding:14px 18px;text-align:center;">
+        <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Current Active Equation</div>
+        <div id="gos-live-formula" style="font-size:24px;font-weight:800;color:#38bdf8;font-family:monospace;letter-spacing:0.02em;">
           ${currentFormula}
+        </div>
+        <div id="gos-math-insights" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px;">
+          ${insights.map(item => `
+            <span class="gos-insight-badge" style="border-color:${item.color}40;color:${item.color};background:${item.color}15;">
+              <span>${item.icon}</span>
+              <span>${item.label}</span>
+              ${item.sub ? `<span style="font-size:10px;opacity:0.75;margin-left:2px;">(${item.sub})</span>` : ''}
+            </span>
+          `).join('')}
         </div>
       </div>
 
-      <!-- Sliders List -->
-      <div style="display:flex;flex-direction:column;gap:14px;">
-        ${renderSliderRow('a', 'Coefficient a (Steepness / Scale)', params.a !== undefined ? params.a : 1, -10, 10, 0.1)}
-        ${(tmpl === 'quadratic' || tmpl === 'cubic' || tmpl === 'exp' || tmpl === 'ln') ? renderSliderRow('b', 'Coefficient b (Shift / Rate)', params.b !== undefined ? params.b : (tmpl === 'exp' || tmpl === 'ln' ? 1 : 0), -10, 10, 0.1) : ''}
-        ${(tmpl === 'quadratic' || tmpl === 'cubic') ? renderSliderRow('c', 'Coefficient c (Constant / Linear Term)', params.c !== undefined ? params.c : 0, -10, 10, 0.5) : ''}
-        ${tmpl === 'cubic' ? renderSliderRow('d', 'Coefficient d (Vertical Constant)', params.d !== undefined ? params.d : 0, -10, 10, 0.5) : ''}
+      <!-- Manual Parameter Cards List (Direct Input, No Lines / Sliders) -->
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        ${renderParamRow('a', aDesc.title, aDesc.sub, params.a !== undefined ? params.a : 1, 1, 0.1, [-3, -2, -1, -0.5, 0.5, 1, 2, 3], { bg: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: 'rgba(56,189,248,0.35)' })}
+        
+        ${(tmpl === 'quadratic' || tmpl === 'cubic' || tmpl === 'exp' || tmpl === 'ln') 
+          ? renderParamRow('b', bDesc.title, bDesc.sub, params.b !== undefined ? params.b : ((tmpl === 'exp' || tmpl === 'ln') ? 1 : 0), ((tmpl === 'exp' || tmpl === 'ln') ? 1 : 0), 0.1, [-3, -2, -1, 0, 1, 2, 3], { bg: 'rgba(16,185,129,0.15)', color: '#10b981', border: 'rgba(16,185,129,0.35)' }) 
+          : ''}
+        
+        ${(tmpl === 'quadratic' || tmpl === 'cubic') 
+          ? renderParamRow('c', cDesc.title, cDesc.sub, params.c !== undefined ? params.c : 0, 0, 0.5, [-4, -2, -1, 0, 1, 2, 4], { bg: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: 'rgba(245,158,11,0.35)' }) 
+          : ''}
+        
+        ${tmpl === 'cubic' 
+          ? renderParamRow('d', dDesc.title, dDesc.sub, params.d !== undefined ? params.d : 0, 0, 0.5, [-4, -2, 0, 2, 4], { bg: 'rgba(168,85,247,0.15)', color: '#c084fc', border: 'rgba(168,85,247,0.35)' }) 
+          : ''}
       </div>
     `;
   }
 
-  function renderSliderRow(key, label, val, min, max, step) {
+  function renderParamRow(key, title, subtitle, val, defaultVal, step, presets, theme) {
+    const numVal = val !== undefined ? val : defaultVal;
     return `
-      <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 14px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <label style="font-size:12.5px;font-weight:600;color:#cbd5e1;">${label}</label>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <span style="font-family:monospace;color:#38bdf8;font-weight:700;">${key} = </span>
-            <input type="number" step="${step}" id="gos-val-${key}" value="${val}" style="width:65px;padding:4px 6px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#fff;font-family:monospace;font-weight:700;text-align:center;" oninput="GraphObject.updateParam('${key}', parseFloat(this.value) || 0)">
+      <div class="gos-param-card" id="gos-card-${key}">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;">
+          <!-- Left: Variable Avatar & Pedagogical Role -->
+          <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+            <div class="gos-param-badge" style="background:${theme.bg};color:${theme.color};border:1px solid ${theme.border};">
+              ${key}
+            </div>
+            <div style="min-width:0;">
+              <div style="font-size:13.5px;font-weight:700;color:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                ${title}
+              </div>
+              <div style="font-size:11px;color:#94a3b8;margin-top:2px;">
+                ${subtitle}
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Tactile Stepper & Manual Numeric Input (No range slider lines) -->
+          <div class="gos-input-cluster">
+            <button class="gos-stepper-btn" onclick="GraphObject.stepParam('${key}', -${step})" title="Decrease ${key} by ${step}">
+              −
+            </button>
+            <input type="number" step="${step}" id="gos-val-${key}" value="${numVal}" class="gos-manual-input"
+              oninput="GraphObject.handleManualInput('${key}', this.value)"
+              onchange="GraphObject.commitManualInput('${key}', this.value)"
+              title="Click to manually type any value">
+            <button class="gos-stepper-btn" onclick="GraphObject.stepParam('${key}', ${step})" title="Increase ${key} by ${step}">
+              +
+            </button>
+            <button class="gos-reset-btn" onclick="GraphObject.setParam('${key}', ${defaultVal})" title="Reset to default (${defaultVal})">
+              ↺
+            </button>
           </div>
         </div>
-        <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" id="gos-range-${key}" style="width:100%;accent-color:#38bdf8;cursor:pointer;" oninput="GraphObject.updateParam('${key}', parseFloat(this.value))">
+
+        <!-- Quick Value Presets & Quick Step -->
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding-top:8px;border-top:1px solid rgba(255,255,255,0.06);">
+          <span style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-right:2px;">Presets:</span>
+          ${presets.map(p => {
+            const isActive = Math.abs(Number(numVal) - p) < 0.0001;
+            return `
+              <button class="gos-preset-chip gos-chip-${key} ${isActive ? 'active' : ''}" 
+                data-val="${p}"
+                onclick="GraphObject.setParam('${key}', ${p})">
+                ${p > 0 && key !== 'a' ? '+' + p : p}
+              </button>
+            `;
+          }).join('')}
+          <div style="margin-left:auto;display:flex;align-items:center;gap:4px;">
+            <button class="gos-preset-chip" style="font-size:10px;padding:2px 6px;opacity:0.8;" onclick="GraphObject.stepParam('${key}', -1)" title="Step −1.0">−1</button>
+            <button class="gos-preset-chip" style="font-size:10px;padding:2px 6px;opacity:0.8;" onclick="GraphObject.stepParam('${key}', 1)" title="Step +1.0">+1</button>
+          </div>
+        </div>
       </div>
     `;
   }
@@ -1307,22 +1460,89 @@ const GraphObject = (() => {
     }
   }
 
-  function updateParam(key, val) {
+  function setParam(key, val) {
     if (!editingGraph) return;
     if (!editingGraph.params) editingGraph.params = {};
+    val = Math.round(Number(val) * 1000) / 1000;
     editingGraph.params[key] = val;
 
-    // Sync input and range
+    // Update input box if not currently actively focused
     const valInput = document.getElementById(`gos-val-${key}`);
-    const rangeInput = document.getElementById(`gos-range-${key}`);
-    if (valInput) valInput.value = val;
-    if (rangeInput) rangeInput.value = val;
+    if (valInput && document.activeElement !== valInput) {
+      valInput.value = val;
+    }
 
-    // Update active equation string
+    // Update preset chip active states
+    const card = document.getElementById(`gos-card-${key}`);
+    if (card) {
+      card.querySelectorAll('.gos-preset-chip').forEach(chip => {
+        const chipVal = parseFloat(chip.getAttribute('data-val'));
+        if (!isNaN(chipVal)) {
+          chip.classList.toggle('active', Math.abs(chipVal - val) < 0.0001);
+        }
+      });
+    }
+
+    updateFormulaAndInsights();
+
+    if (typeof Canvas !== 'undefined' && Canvas.renderShapes) {
+      Canvas.renderShapes();
+    }
+  }
+
+  function stepParam(key, delta) {
+    if (!editingGraph) return;
+    if (!editingGraph.params) editingGraph.params = {};
+    const defaultVal = key === 'a' ? 1 : 0;
+    let cur = editingGraph.params[key] !== undefined ? editingGraph.params[key] : defaultVal;
+    let next = Math.round((cur + delta) * 100) / 100;
+    setParam(key, next);
+    const valInput = document.getElementById(`gos-val-${key}`);
+    if (valInput) valInput.value = next;
+  }
+
+  function handleManualInput(key, rawVal) {
+    if (!editingGraph) return;
+    if (rawVal === '' || rawVal === '-' || rawVal === '.' || rawVal === '-.') return;
+    const parsed = parseFloat(rawVal);
+    if (!isNaN(parsed)) {
+      if (!editingGraph.params) editingGraph.params = {};
+      editingGraph.params[key] = parsed;
+
+      const card = document.getElementById(`gos-card-${key}`);
+      if (card) {
+        card.querySelectorAll('.gos-preset-chip').forEach(chip => {
+          const chipVal = parseFloat(chip.getAttribute('data-val'));
+          if (!isNaN(chipVal)) {
+            chip.classList.toggle('active', Math.abs(chipVal - parsed) < 0.0001);
+          }
+        });
+      }
+
+      updateFormulaAndInsights();
+
+      if (typeof Canvas !== 'undefined' && Canvas.renderShapes) {
+        Canvas.renderShapes();
+      }
+    }
+  }
+
+  function commitManualInput(key, rawVal) {
+    if (!editingGraph) return;
+    const defaultVal = key === 'a' ? 1 : 0;
+    let parsed = parseFloat(rawVal);
+    if (isNaN(parsed)) parsed = defaultVal;
+    setParam(key, parsed);
+    const valInput = document.getElementById(`gos-val-${key}`);
+    if (valInput) valInput.value = parsed;
+  }
+
+  function updateFormulaAndInsights() {
+    if (!editingGraph) return;
     const tmpl = editingGraph.activeTemplate || 'quadratic';
-    const params = editingGraph.params;
-    let formatted = '';
+    const params = editingGraph.params || {};
 
+    let formatted = '';
     if (tmpl === 'linear') formatted = formatLinear(params.a);
     else if (tmpl === 'quadratic') formatted = formatQuadratic(params.a, params.b, params.c);
     else if (tmpl === 'cubic') formatted = formatCubic(params.a, params.b, params.c, params.d);
@@ -1333,15 +1553,26 @@ const GraphObject = (() => {
       editingGraph.equations[0].expr = formatted;
     }
 
-    // Update live banner
     const liveBanner = document.getElementById('gos-live-formula');
     if (liveBanner) {
       liveBanner.textContent = `y = ${formatted}`;
     }
 
-    if (typeof Canvas !== 'undefined' && Canvas.renderShapes) {
-      Canvas.renderShapes();
+    const insightsContainer = document.getElementById('gos-math-insights');
+    if (insightsContainer) {
+      const insights = computeMathInsights(tmpl, params);
+      insightsContainer.innerHTML = insights.map(item => `
+        <span class="gos-insight-badge" style="border-color:${item.color}40;color:${item.color};background:${item.color}15;">
+          <span>${item.icon}</span>
+          <span>${item.label}</span>
+          ${item.sub ? `<span style="font-size:10px;opacity:0.75;margin-left:2px;">(${item.sub})</span>` : ''}
+        </span>
+      `).join('');
     }
+  }
+
+  function updateParam(key, val) {
+    setParam(key, val);
   }
 
   function addEquationRow() {
@@ -1465,7 +1696,7 @@ const GraphObject = (() => {
     }
 
     if (typeof App !== 'undefined' && App.showToast) {
-      App.showToast('📈 Interactive Math Graph added! Click ⚙️ to explore sliders.');
+      App.showToast('📈 Interactive Math Graph added! Click ⚙️ to explore parameters.');
     }
   }
 
@@ -1479,6 +1710,11 @@ const GraphObject = (() => {
     switchStudioTab,
     applyTemplate,
     updateParam,
+    setParam,
+    stepParam,
+    handleManualInput,
+    commitManualInput,
+    computeMathInsights,
     addEquationRow,
     removeEqRow,
     toggleEqVisible,
