@@ -2379,6 +2379,10 @@ body.board-fullscreen #fs-page-control {
   padding: 4px 6px;
   box-sizing: border-box;
   z-index: 110;
+  /* #canvas-viewport parent has pointer-events:none; override it here so
+     clicks and keyboard input actually reach the textarea */
+  pointer-events: auto;
+  cursor: text;
 }
 
 .active-board-textbox textarea {
@@ -2390,6 +2394,10 @@ body.board-fullscreen #fs-page-control {
   margin: 0 !important;
   overflow: hidden;
   resize: none;
+  pointer-events: auto;
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .tb-corner-handle {

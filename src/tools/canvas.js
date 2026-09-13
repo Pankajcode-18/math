@@ -1802,6 +1802,10 @@ const Canvas = (() => {
   // MOUSE HANDLERS
   // ─────────────────────────────────────────────
   function onPointerDown(e) {
+    // If the user is clicking inside the active text editor, do NOT intercept — let the textarea get focus
+    const editorBox = document.getElementById('text-editor-box');
+    if (editorBox && editorBox.contains(e.target)) return;
+
     if (isSpaceDown || e.button === 1) {
       isPanning = true;
       panStart = { x: e.clientX - panX, y: e.clientY - panY };
@@ -1933,6 +1937,14 @@ const Canvas = (() => {
   // TOUCH HANDLERS — Zero-lag touch & multi-touch
   // ─────────────────────────────────────────────
   function onTouchStart(e) {
+    // If any touch is on the active text editor, do NOT intercept — let the textarea receive input and show keyboard
+    const editorBox = document.getElementById('text-editor-box');
+    if (editorBox) {
+      for (let i = 0; i < e.touches.length; i++) {
+        if (editorBox.contains(e.touches[i].target)) return;
+      }
+    }
+
     // 3+ fingers gesture eraser check
     if (e.touches.length >= 3 && typeof GestureEraser !== 'undefined') {
       e.preventDefault();
@@ -2208,7 +2220,7 @@ const Canvas = (() => {
     if (tool === 'text') {
       if (hit && hit.type === 'text-block') {
         if (selected === hit) {
-          Drawing.editText(hit, getScreenPos(e));
+          Drawing.editText(hit, null);
         } else {
           selectShape(hit);
         }
@@ -2243,7 +2255,7 @@ const Canvas = (() => {
       if (hit) {
         if (hit.type === 'text-block') {
           if (selected === hit) {
-            Drawing.editText(hit, getScreenPos(e));
+            Drawing.editText(hit, null);
             return;
           } else {
             selectShape(hit);

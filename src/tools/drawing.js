@@ -339,11 +339,12 @@ const Drawing = (() => {
     editor.className = 'active-board-textbox';
     editor.style.cssText = `
       position: absolute; left: ${screenPos.x - 4}px; top: ${screenPos.y - 4}px;
-      min-width: ${initialW}px; z-index: 100;
+      min-width: ${initialW}px; z-index: 110;
       background: transparent;
       border: 1.5px solid #3b82f6;
       border-radius: 2px; padding: 2px 4px;
       box-sizing: border-box;
+      pointer-events: auto;
       touch-action: auto;
       cursor: text;
     `;
@@ -365,6 +366,7 @@ const Drawing = (() => {
       text-align: ${align};
       resize: none; line-height: 1.35;
       caret-color: #3b82f6;
+      pointer-events: auto;
       touch-action: auto;
       -webkit-user-select: text; user-select: text;
       padding: 0; margin: 0;
