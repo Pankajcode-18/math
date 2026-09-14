@@ -6155,4 +6155,137 @@ input[type="range"].smart-slider::-webkit-slider-thumb:active {
   color: #cbd5e1;
   letter-spacing: 0.01em;
 }
+
+/* ───────────────────────────────────────────────────────────── */
+/* GRAPH STUDIO SECTIONS & ADVANCED MATHEMATICAL TEMPLATES       */
+/* ───────────────────────────────────────────────────────────── */
+
+.gos-section-block {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.gos-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.gos-section-tag {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid;
+  text-transform: uppercase;
+}
+
+.gos-templates-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 11px;
+}
+
+.gos-math-tag {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  padding: 2.5px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.gos-card-two-level {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.gos-variant-btn {
+  flex: 1;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 0;
+}
+
+.gos-variant-btn:hover {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.45);
+  transform: translateY(-1px);
+}
+
+.gos-variant-btn:active {
+  transform: scale(0.97);
+}
+
+.gos-variant-toggle {
+  padding: 6px 14px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gos-variant-toggle:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.gos-variant-toggle.active {
+  background: rgba(56, 189, 248, 0.22);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.5);
+  font-weight: 700;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+}
+
+.gos-period-card {
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.9));
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+.gos-period-stat {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 7px 8px;
+}
+
+/* Responsive design for tablets and mobile */
+@media (max-width: 640px) {
+  .gos-templates-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .gos-template-card[style*="grid-column: span 2"],
+  .gos-template-card[style*="grid-column:span 2"] {
+    grid-column: span 1 !important;
+  }
+  .gos-period-card > div:last-child {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
 

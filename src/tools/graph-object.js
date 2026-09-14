@@ -22,6 +22,7 @@ const GraphObject = (() => {
     s = s.replace(/²/g, '^2').replace(/³/g, '^3').replace(/⁴/g, '^4').replace(/⁵/g, '^5');
     s = s.replace(/ˣ/g, '^x').replace(/⁻/g, '^-').replace(/⁺/g, '^+').replace(/⁰/g, '^0').replace(/¹/g, '^1');
     s = s.replace(/π/g, 'pi');
+    s = s.replace(/[·×]/g, '*');
 
     // e^... to exp(...)
     s = s.replace(/e\^\(([^)]+)\)/gi, 'exp($1)');
@@ -35,12 +36,12 @@ const GraphObject = (() => {
     // ')' followed by number or variable or '('
     s = s.replace(/(\))\s*([0-9a-z(])/gi, '$1*$2');
     // variable followed by '('
-    s = s.replace(/\bx\s*\(/gi, 'x*(');
-    // ')x'
-    s = s.replace(/(\))\s*x/gi, '$1*x');
+    s = s.replace(/\b([xy])\s*\(/gi, '$1*(');
+    // ')' followed by variable
+    s = s.replace(/(\))\s*([xy])/gi, '$1*$2');
 
-    // Negative variable: -x -> -1*x (preserving exponent precedence: -x^2 -> -1*x^2 = -(x^2))
-    s = s.replace(/(^|[(\-+*\/^])\s*-\s*x\b/gi, '$1-1*x');
+    // Negative variable: -x -> -1*x, -y -> -1*y
+    s = s.replace(/(^|[(\-+*\/^])\s*-\s*([xy])\b/gi, '$1-1*$2');
 
     return s;
   }
@@ -69,13 +70,13 @@ const GraphObject = (() => {
           ident += s[i];
           i++;
         }
-        if (ident === 'x') {
-          tokens.push({ type: 'var', val: 'x' });
+        if (ident === 'x' || ident === 'y') {
+          tokens.push({ type: 'var', val: ident });
         } else if (ident === 'pi') {
           tokens.push({ type: 'num', val: Math.PI });
         } else if (ident === 'e') {
           tokens.push({ type: 'num', val: Math.E });
-        } else if (['sin', 'cos', 'tan', 'abs', 'sqrt', 'ln', 'log', 'exp'].includes(ident)) {
+        } else if (['sin', 'cos', 'tan', 'csc', 'sec', 'cot', 'abs', 'sqrt', 'ln', 'log', 'exp'].includes(ident)) {
           tokens.push({ type: 'fn', val: ident });
         } else {
           tokens.push({ type: 'var', val: 'x' });
@@ -154,19 +155,38 @@ const GraphObject = (() => {
       const tokens = tokenize(cleaned);
       const rpn = infixToRPN(tokens);
 
-      return function evaluate(x) {
+      return function evaluate(val) {
         const stack = [];
         for (const t of rpn) {
           if (t.type === 'num') {
             stack.push(t.val);
           } else if (t.type === 'var') {
-            stack.push(x);
+            stack.push(val);
           } else if (t.type === 'fn') {
             const a = stack.pop();
             switch (t.val) {
               case 'sin': stack.push(Math.sin(a)); break;
               case 'cos': stack.push(Math.cos(a)); break;
-              case 'tan': stack.push(Math.tan(a)); break;
+              case 'tan': {
+                const cVal = Math.cos(a);
+                stack.push(Math.abs(cVal) < 1e-11 ? NaN : Math.tan(a));
+                break;
+              }
+              case 'csc': {
+                const sVal = Math.sin(a);
+                stack.push(Math.abs(sVal) < 1e-11 ? NaN : 1 / sVal);
+                break;
+              }
+              case 'sec': {
+                const cVal = Math.cos(a);
+                stack.push(Math.abs(cVal) < 1e-11 ? NaN : 1 / cVal);
+                break;
+              }
+              case 'cot': {
+                const sVal = Math.sin(a);
+                stack.push(Math.abs(sVal) < 1e-11 ? NaN : Math.cos(a) / sVal);
+                break;
+              }
               case 'abs': stack.push(Math.abs(a)); break;
               case 'sqrt': stack.push(a < 0 ? NaN : Math.sqrt(a)); break;
               case 'ln': stack.push(a <= 0 ? NaN : Math.log(a)); break;
@@ -199,11 +219,21 @@ const GraphObject = (() => {
   // 2. COEFFICIENT FORMATTERS (For Classroom Teaching Presets)
   // ─────────────────────────────────────────────────────────────────────────────
 
-  function formatLinear(a) {
-    if (a === 0) return '0';
-    if (a === 1) return 'x';
-    if (a === -1) return '-x';
-    return `${a}x`;
+  function formatLinear(m, c) {
+    let mPart = '';
+    if (m === 0) {
+      return (c !== undefined && c !== null) ? `${c}` : '0';
+    } else if (m === 1) {
+      mPart = 'x';
+    } else if (m === -1) {
+      mPart = '-x';
+    } else {
+      mPart = `${m}x`;
+    }
+
+    if (!c || c === 0) return mPart;
+    const sign = c > 0 ? '+ ' : '- ';
+    return `${mPart} ${sign}${Math.abs(c)}`;
   }
 
   function formatQuadratic(a, b, c) {
@@ -221,6 +251,35 @@ const GraphObject = (() => {
         bStr = sign + (absB === 1 ? 'x' : `${absB}x`);
       } else {
         bStr = b === 1 ? 'x' : (b === -1 ? '-x' : `${b}x`);
+      }
+      parts.push(bStr);
+    }
+    if (c !== 0 || parts.length === 0) {
+      if (parts.length > 0) {
+        const sign = c >= 0 ? '+ ' : '- ';
+        parts.push(sign + Math.abs(c));
+      } else {
+        parts.push(`${c}`);
+      }
+    }
+    return parts.join(' ');
+  }
+
+  function formatHorizontalQuadratic(a, b, c) {
+    let parts = [];
+    if (a !== 0) {
+      if (a === 1) parts.push('y²');
+      else if (a === -1) parts.push('-y²');
+      else parts.push(`${a}y²`);
+    }
+    if (b !== 0) {
+      let bStr = '';
+      if (parts.length > 0) {
+        const sign = b > 0 ? '+ ' : '- ';
+        const absB = Math.abs(b);
+        bStr = sign + (absB === 1 ? 'y' : `${absB}y`);
+      } else {
+        bStr = b === 1 ? 'y' : (b === -1 ? '-y' : `${b}y`);
       }
       parts.push(bStr);
     }
@@ -271,18 +330,88 @@ const GraphObject = (() => {
     return parts.join(' ');
   }
 
-  function formatExponential(a, b) {
-    let expPart = b === 1 ? 'eˣ' : (b === -1 ? 'e⁻ˣ' : `e^(${b}x)`);
-    if (a === 1) return expPart;
-    if (a === -1) return `-${expPart}`;
-    return `${a}${expPart}`;
+  function formatExponential(a, b, c) {
+    const baseVal = b !== undefined ? b : 2;
+    let baseStr = (baseVal === 2.718 || Math.abs(baseVal - Math.E) < 0.01) ? 'eˣ' : `${baseVal}ˣ`;
+    let aStr = '';
+    const aVal = a !== undefined ? a : 1;
+    if (aVal === 1) aStr = baseStr;
+    else if (aVal === -1) aStr = `-${baseStr}`;
+    else aStr = `${aVal}·${baseStr}`;
+
+    const cVal = c !== undefined ? c : 0;
+    if (!cVal || cVal === 0) return aStr;
+    const sign = cVal > 0 ? '+ ' : '- ';
+    return `${aStr} ${sign}${Math.abs(cVal)}`;
   }
 
-  function formatLogarithmic(a, b) {
-    let lnPart = b === 1 ? 'ln(x)' : `ln(${b}x)`;
-    if (a === 1) return lnPart;
-    if (a === -1) return `-${lnPart}`;
-    return `${a}*${lnPart}`;
+  function formatLogarithmic(a, h, k) {
+    const aVal = a !== undefined ? a : 1;
+    const hVal = h !== undefined ? h : 0;
+    const kVal = k !== undefined ? k : 0;
+
+    let inner = 'x';
+    if (hVal > 0) inner = `x - ${hVal}`;
+    else if (hVal < 0) inner = `x + ${Math.abs(hVal)}`;
+
+    let main = `ln(${inner})`;
+    if (aVal === -1) main = `-${main}`;
+    else if (aVal !== 1) main = `${aVal}·${main}`;
+
+    if (!kVal || kVal === 0) return main;
+    const sign = kVal > 0 ? '+ ' : '- ';
+    return `${main} ${sign}${Math.abs(kVal)}`;
+  }
+
+  function formatTrig(fnName, a, b, c, d) {
+    const aVal = a !== undefined ? a : 1;
+    const bVal = b !== undefined ? b : 1;
+    const cVal = c !== undefined ? c : 0;
+    const dVal = d !== undefined ? d : 0;
+
+    let bStr = '';
+    if (bVal === 1) bStr = 'x';
+    else if (bVal === -1) bStr = '-x';
+    else bStr = `${bVal}x`;
+
+    let inner = bStr;
+    if (cVal && cVal !== 0) {
+      const sign = cVal > 0 ? '+ ' : '- ';
+      inner = `${bStr} ${sign}${Math.abs(cVal)}`;
+    }
+
+    let core = `${fnName}(${inner})`;
+    if (aVal === -1) core = `-${core}`;
+    else if (aVal !== 1) core = `${aVal}·${core}`;
+
+    if (!dVal || dVal === 0) return core;
+    const sign = dVal > 0 ? '+ ' : '- ';
+    return `${core} ${sign}${Math.abs(dVal)}`;
+  }
+
+  function formatPeriod(isPi, b) {
+    const absB = Math.abs(b) || 1;
+    const numPi = isPi ? 1 : 2;
+    const val = (numPi * Math.PI) / absB;
+    const approx = Math.round(val * 100) / 100;
+
+    let exact = '';
+    if (Math.abs(absB - Math.PI) < 0.01) {
+      exact = `${numPi}`;
+    } else if (Math.abs(absB - 1) < 0.001) {
+      exact = numPi === 1 ? 'π' : '2π';
+    } else if (Math.abs(absB - 2) < 0.001) {
+      exact = numPi === 1 ? 'π/2' : 'π';
+    } else if (Math.abs(absB - 3) < 0.001) {
+      exact = numPi === 1 ? 'π/3' : '2π/3';
+    } else if (Math.abs(absB - 4) < 0.001) {
+      exact = numPi === 1 ? 'π/4' : 'π/2';
+    } else if (Math.abs(absB - 0.5) < 0.001) {
+      exact = numPi === 1 ? '2π' : '4π';
+    } else {
+      exact = `${numPi}π/${absB}`;
+    }
+    return { exact, approx, raw: val };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -527,13 +656,74 @@ const GraphObject = (() => {
     }
 
     // ── Draw Curves (High-density adaptive sampling + Domain & Asymptote Handling) ──
+    // ── Educational Asymptotes & Midline Guides ──
+    if (g.activeTemplate === 'exp' && g.params && g.params.c !== undefined) {
+      const asympY = toScreenY(g.params.c);
+      if (asympY >= plotY && asympY <= plotY + plotH) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(244, 63, 94, 0.7)';
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(plotX, asympY);
+        ctx.lineTo(plotX + plotW, asympY);
+        ctx.stroke();
+
+        ctx.fillStyle = '#f43f5e';
+        ctx.font = 'bold 9.5px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(`Horiz. Asymptote y = ${g.params.c}`, plotX + plotW - 6, asympY - 4);
+        ctx.restore();
+      }
+    } else if (g.activeTemplate === 'ln' && g.params && g.params.h !== undefined) {
+      const asympX = toScreenX(g.params.h);
+      if (asympX >= plotX && asympX <= plotX + plotW) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(244, 63, 94, 0.7)';
+        ctx.lineWidth = 1.4;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(asympX, plotY);
+        ctx.lineTo(asympX, plotY + plotH);
+        ctx.stroke();
+
+        ctx.fillStyle = '#f43f5e';
+        ctx.font = 'bold 9.5px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Vert. Asymptote x = ${g.params.h}`, asympX + 6, plotY + 14);
+        ctx.restore();
+      }
+    } else if (g.activeTemplate && g.activeTemplate.startsWith('trig_') && g.params && g.params.d !== 0 && g.params.d !== undefined) {
+      const midY = toScreenY(g.params.d);
+      if (midY >= plotY && midY <= plotY + plotH) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(plotX, midY);
+        ctx.lineTo(plotX + plotW, midY);
+        ctx.stroke();
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = '9.5px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`Midline y = ${g.params.d}`, plotX + 8, midY - 4);
+        ctx.restore();
+      }
+    }
+
+    // ── Draw Curves (High-density adaptive sampling + Domain & Asymptote Handling) ──
     if (g.equations && g.equations.length) {
-      const numSamples = Math.min(1200, Math.max(300, Math.round(plotW * 2.5)));
+      const numSamples = Math.min(1400, Math.max(350, Math.round(plotW * 2.8)));
       const dx = spanX / numSamples;
+      const numSamplesY = Math.min(1400, Math.max(350, Math.round(plotH * 2.8)));
+      const dy = spanY / numSamplesY;
 
       g.equations.forEach(eq => {
         if (!eq.visible || !eq.expr) return;
 
+        const isHorizontal = eq.isXEquals || (g.activeTemplate === 'quadratic_horizontal');
         const fn = compile(eq.expr);
         ctx.strokeStyle = eq.color || '#38bdf8';
         ctx.lineWidth = eq.lineWidth || 2.6;
@@ -542,48 +732,71 @@ const GraphObject = (() => {
 
         ctx.beginPath();
         let started = false;
-        let lastSy = 0;
-        let lastVx = xMin;
+        let lastCoord = 0;
 
-        // Special handling for ln(x): domain is x > 0
-        const isLog = /ln/i.test(eq.expr);
+        if (isHorizontal) {
+          // Horizontal Curve: x = f(y) (sample along y-axis)
+          for (let i = 0; i <= numSamplesY; i++) {
+            const vy = yMin + i * dy;
+            const vx = fn(vy);
 
-        for (let i = 0; i <= numSamples; i++) {
-          let vx = xMin + i * dx;
+            if (isNaN(vx) || !isFinite(vx)) {
+              started = false;
+              continue;
+            }
 
-          // If function is ln, evaluate dense asymptotic samples right above 0
-          if (isLog && vx <= 0) {
-            started = false;
-            continue;
+            const sx = toScreenX(vx);
+            const sy = toScreenY(vy);
+
+            if (!started) {
+              ctx.moveTo(sx, sy);
+              started = true;
+            } else {
+              ctx.lineTo(sx, sy);
+            }
           }
+          ctx.stroke();
+        } else {
+          // Standard Vertical Curve: y = f(x) (sample along x-axis)
+          const isLog = /ln/i.test(eq.expr) || g.activeTemplate === 'ln';
+          const logMinX = (g.params && g.params.h !== undefined) ? g.params.h : 0;
 
-          const vy = fn(vx);
+          for (let i = 0; i <= numSamples; i++) {
+            let vx = xMin + i * dx;
 
-          if (isNaN(vy) || !isFinite(vy)) {
-            started = false;
-            continue;
+            // Logarithm domain enforcement: strictly x > h
+            if (isLog && vx <= logMinX) {
+              started = false;
+              continue;
+            }
+
+            const vy = fn(vx);
+
+            if (isNaN(vy) || !isFinite(vy)) {
+              started = false;
+              continue;
+            }
+
+            const sx = toScreenX(vx);
+            const sy = toScreenY(vy);
+
+            // Discontinuity & vertical asymptote jump detection (e.g. tan, sec, csc, cot, 1/x)
+            if (started && Math.abs(sy - lastCoord) > plotH * 0.7) {
+              ctx.stroke();
+              ctx.beginPath();
+              started = false;
+            }
+
+            if (!started) {
+              ctx.moveTo(sx, sy);
+              started = true;
+            } else {
+              ctx.lineTo(sx, sy);
+            }
+            lastCoord = sy;
           }
-
-          const sx = toScreenX(vx);
-          const sy = toScreenY(vy);
-
-          // Discontinuity & vertical asymptote jump detection (e.g. 1/x, tan(x))
-          if (started && Math.abs(sy - lastSy) > plotH * 0.85) {
-            ctx.stroke();
-            ctx.beginPath();
-            started = false;
-          }
-
-          if (!started) {
-            ctx.moveTo(sx, sy);
-            started = true;
-          } else {
-            ctx.lineTo(sx, sy);
-          }
-          lastSy = sy;
-          lastVx = vx;
+          ctx.stroke();
         }
-        ctx.stroke();
       });
     }
 
@@ -1067,57 +1280,176 @@ const GraphObject = (() => {
     }
   }
 
-  // Tab 1: Presets & Templates (Linear, Quadratic, Cubic, Exp, Log)
+  // Tab 1: Presets & Templates (Reorganized into Algebraic & Trigonometric Sections)
   function renderTemplatesTab(container, g) {
     container.innerHTML = `
-      <div style="font-size:13px;color:#cbd5e1;line-height:1.5;">
-        Select a standard mathematical function family to plot and explore with real-time parameter controls:
+      <div style="font-size:13px;color:#cbd5e1;line-height:1.5;margin-bottom:14px;">
+        Select a standard mathematical function family to explore interactive curves with real-time parameter controls:
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <!-- Linear -->
-        <div class="gos-template-card" onclick="GraphObject.applyTemplate('linear')">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-            <span style="font-weight:700;color:#38bdf8;font-size:14px;">📏 Linear Function</span>
-            <span style="font-size:11px;background:rgba(56,189,248,0.15);color:#38bdf8;padding:2px 6px;border-radius:4px;">y = ax</span>
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!-- SECTION 1 — ALGEBRAIC FUNCTIONS                             -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <div class="gos-section-block">
+        <div class="gos-section-header">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="gos-section-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;border-color:rgba(56,189,248,0.35);">
+              SECTION 1
+            </span>
+            <span style="font-weight:800;font-size:14px;color:#f8fafc;letter-spacing:0.02em;">
+              📐 Algebraic Functions
+            </span>
           </div>
-          <div style="font-size:12px;color:#94a3b8;">Explore slopes, rates of change, and direct variation (e.g. y = 2x, y = -3x).</div>
+          <span style="font-size:11px;color:#94a3b8;">Lines, Polynomials, Exponentials & Logarithms</span>
         </div>
 
-        <!-- Quadratic -->
-        <div class="gos-template-card" onclick="GraphObject.applyTemplate('quadratic')">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-            <span style="font-weight:700;color:#eab308;font-size:14px;">🎯 Quadratic Parabola</span>
-            <span style="font-size:11px;background:rgba(234,179,8,0.15);color:#eab308;padding:2px 6px;border-radius:4px;">y = ax² + bx + c</span>
+        <div class="gos-templates-grid">
+          <!-- 1. Linear Function -->
+          <div class="gos-template-card" onclick="GraphObject.applyTemplate('linear')">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-weight:700;color:#38bdf8;font-size:14px;">📏 Linear Function</span>
+              <span class="gos-math-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;">y = mx + c</span>
+            </div>
+            <div style="font-size:12px;color:#94a3b8;line-height:1.45;">
+              <strong style="color:#e2e8f0;">m</strong> = slope / gradient, <strong style="color:#e2e8f0;">c</strong> = y-intercept. Constant rate of change with increasing or decreasing behavior.
+            </div>
           </div>
-          <div style="font-size:12px;color:#94a3b8;">Investigate vertex, axis of symmetry, opening direction, and roots.</div>
+
+          <!-- 2. Quadratic Function (Two-level selection) -->
+          <div class="gos-template-card gos-card-two-level">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-weight:700;color:#eab308;font-size:14px;">🎯 Quadratic Equations</span>
+              <span class="gos-math-tag" style="background:rgba(234,179,8,0.15);color:#eab308;">2 Forms</span>
+            </div>
+            <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;line-height:1.45;">
+              Parabolas with vertex, axis of symmetry, opening direction, and real roots.
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('quadratic_vertical')">
+                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Vertical</span>
+                <span style="font-family:monospace;font-size:11px;font-weight:700;color:#eab308;">y = ax² + bx + c</span>
+              </button>
+              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('quadratic_horizontal')">
+                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Horizontal</span>
+                <span style="font-family:monospace;font-size:11px;font-weight:700;color:#f59e0b;">x = ay² + by + c</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3. Cubic Function -->
+          <div class="gos-template-card" onclick="GraphObject.applyTemplate('cubic')">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-weight:700;color:#a855f7;font-size:14px;">🌊 Cubic Function</span>
+              <span class="gos-math-tag" style="background:rgba(168,85,247,0.15);color:#a855f7;">y = ax³ + bx² + cx + d</span>
+            </div>
+            <div style="font-size:12px;color:#94a3b8;line-height:1.45;">
+              Demonstrate inflection points, polynomial turning points, and progressive end behavior.
+            </div>
+          </div>
+
+          <!-- 4. Exponential Function -->
+          <div class="gos-template-card" onclick="GraphObject.applyTemplate('exp')">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-weight:700;color:#10b981;font-size:14px;">🚀 Exponential Curve</span>
+              <span class="gos-math-tag" style="background:rgba(16,185,129,0.15);color:#10b981;">y = a·bˣ + c</span>
+            </div>
+            <div style="font-size:12px;color:#94a3b8;line-height:1.45;">
+              Continuous growth & decay with asymptotic approach toward horizontal asymptote <strong style="color:#e2e8f0;font-family:monospace;">y = c</strong>.
+            </div>
+          </div>
+
+          <!-- 5. Natural Logarithm -->
+          <div class="gos-template-card" style="grid-column: span 2;" onclick="GraphObject.applyTemplate('ln')">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-weight:700;color:#f43f5e;font-size:14px;">🌲 Natural Logarithm</span>
+              <span class="gos-math-tag" style="background:rgba(244,63,94,0.15);color:#f43f5e;">y = a·ln(x - h) + k  [x > h]</span>
+            </div>
+            <div style="font-size:12px;color:#94a3b8;line-height:1.45;">
+              Strictly respects domain <strong style="color:#e2e8f0;font-family:monospace;">x > h</strong> with asymptotic approach toward vertical asymptote <strong style="color:#e2e8f0;font-family:monospace;">x = h</strong>.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <!-- SECTION 2 — TRIGONOMETRIC FUNCTIONS                         -->
+      <!-- ═══════════════════════════════════════════════════════════ -->
+      <div class="gos-section-block">
+        <div class="gos-section-header">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="gos-section-tag" style="background:rgba(168,85,247,0.15);color:#a855f7;border-color:rgba(168,85,247,0.35);">
+              SECTION 2
+            </span>
+            <span style="font-weight:800;font-size:14px;color:#f8fafc;letter-spacing:0.02em;">
+              🌊 Trigonometric Functions
+            </span>
+          </div>
+          <span style="font-size:11px;color:#94a3b8;">Periodic Waves & Reciprocal Trigonometric Pairs</span>
         </div>
 
-        <!-- Cubic -->
-        <div class="gos-template-card" onclick="GraphObject.applyTemplate('cubic')">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-            <span style="font-weight:700;color:#a855f7;font-size:14px;">🌊 Cubic Function</span>
-            <span style="font-size:11px;background:rgba(168,85,247,0.15);color:#a855f7;padding:2px 6px;border-radius:4px;">y = ax³ + bx² + cx + d</span>
+        <div class="gos-templates-grid">
+          <!-- 1. Sine / Cosecant -->
+          <div class="gos-template-card gos-card-two-level">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-weight:700;color:#38bdf8;font-size:14px;">〰️ Sine & Cosecant</span>
+              <span class="gos-math-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;">Period = 2π/|b|</span>
+            </div>
+            <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;line-height:1.45;">
+              Fundamental harmonic wave and its reciprocal. Amplitude, frequency, and midline analysis.
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_sin')">
+                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Sine</span>
+                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#38bdf8;">y = a·sin(bx + c) + d</span>
+              </button>
+              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_csc')">
+                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Cosecant (1/sin)</span>
+                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#0284c7;">y = a·csc(bx + c) + d</span>
+              </button>
+            </div>
           </div>
-          <div style="font-size:12px;color:#94a3b8;">Demonstrate inflection points, polynomial roots, and smooth S-curves.</div>
-        </div>
 
-        <!-- Exponential -->
-        <div class="gos-template-card" onclick="GraphObject.applyTemplate('exp')">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-            <span style="font-weight:700;color:#10b981;font-size:14px;">🚀 Exponential Curve</span>
-            <span style="font-size:11px;background:rgba(16,185,129,0.15);color:#10b981;padding:2px 6px;border-radius:4px;">y = eˣ / a·eᵇˣ</span>
+          <!-- 2. Cosine / Secant -->
+          <div class="gos-template-card gos-card-two-level">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-weight:700;color:#06b6d4;font-size:14px;">📐 Cosine & Secant</span>
+              <span class="gos-math-tag" style="background:rgba(6,182,212,0.15);color:#06b6d4;">Period = 2π/|b|</span>
+            </div>
+            <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;line-height:1.45;">
+              Even harmonic wave and its reciprocal with amplitude, midline, and vertical asymptotes.
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_cos')">
+                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Cosine</span>
+                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#06b6d4;">y = a·cos(bx + c) + d</span>
+              </button>
+              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_sec')">
+                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Secant (1/cos)</span>
+                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#0891b2;">y = a·sec(bx + c) + d</span>
+              </button>
+            </div>
           </div>
-          <div style="font-size:12px;color:#94a3b8;">Model population growth, radioactive decay, and compound interest.</div>
-        </div>
 
-        <!-- Natural Logarithm -->
-        <div class="gos-template-card" onclick="GraphObject.applyTemplate('ln')" style="grid-column: span 2;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-            <span style="font-weight:700;color:#f43f5e;font-size:14px;">🌲 Natural Logarithm</span>
-            <span style="font-size:11px;background:rgba(244,63,94,0.15);color:#f43f5e;padding:2px 6px;border-radius:4px;">y = ln(x) [x > 0]</span>
+          <!-- 3. Tangent / Cotangent -->
+          <div class="gos-template-card gos-card-two-level" style="grid-column: span 2;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-weight:700;color:#f59e0b;font-size:14px;">⚡ Tangent & Cotangent</span>
+              <span class="gos-math-tag" style="background:rgba(245,158,11,0.15);color:#f59e0b;">Period = π/|b|</span>
+            </div>
+            <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;line-height:1.45;">
+              Ratio waves with asymptotic branches. First-class period control with fundamental period = π/|b|.
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_tan')">
+                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Tangent</span>
+                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#f59e0b;">y = a·tan(bx + c) + d</span>
+              </button>
+              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_cot')">
+                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Cotangent (1/tan)</span>
+                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#d97706;">y = a·cot(bx + c) + d</span>
+              </button>
+            </div>
           </div>
-          <div style="font-size:12px;color:#94a3b8;">Strictly respects mathematical domain x > 0 with asymptotic approach to y-axis.</div>
         </div>
       </div>
     `;
@@ -1125,27 +1457,37 @@ const GraphObject = (() => {
 
   // ── Math Educational Insights Helper ──────────────────────────────────────
   function computeMathInsights(tmpl, params) {
-    const a = params.a !== undefined ? params.a : 1;
-    const b = params.b !== undefined ? params.b : (tmpl === 'exp' || tmpl === 'ln' ? 1 : 0);
-    const c = params.c !== undefined ? params.c : 0;
-    const d = params.d !== undefined ? params.d : 0;
-
     const round = (num) => Math.round(num * 100) / 100;
     let items = [];
 
-    if (tmpl === 'quadratic') {
+    if (tmpl === 'linear') {
+      const m = params.m !== undefined ? params.m : (params.a !== undefined ? params.a : 1);
+      const c = params.c !== undefined ? params.c : 0;
+
+      const slopeDesc = m > 0 ? 'Increasing ↗' : m < 0 ? 'Decreasing ↘' : 'Horizontal Constant →';
+      items.push({ icon: '📐', label: `Slope m = ${round(m)}`, sub: slopeDesc, color: '#38bdf8' });
+      items.push({ icon: '🎯', label: `Y-Intercept (0, ${round(c)})`, color: '#10b981' });
+      if (m !== 0) {
+        items.push({ icon: '📍', label: `X-Intercept (${round(-c / m)}, 0)`, color: '#a855f7' });
+      }
+    } else if (tmpl === 'quadratic_vertical' || tmpl === 'quadratic') {
+      const a = params.a !== undefined ? params.a : 1;
+      const b = params.b !== undefined ? params.b : 0;
+      const c = params.c !== undefined ? params.c : 0;
+
       if (a > 0) {
         items.push({ icon: '∪', label: 'Opens Upward', sub: 'Min vertex', color: '#38bdf8' });
       } else if (a < 0) {
         items.push({ icon: '∩', label: 'Opens Downward', sub: 'Max vertex', color: '#f43f5e' });
       } else {
-        items.push({ icon: '—', label: 'Linear Line', sub: 'a = 0', color: '#94a3b8' });
+        items.push({ icon: '—', label: 'Degenerate (Linear)', sub: 'a = 0', color: '#94a3b8' });
       }
 
       if (a !== 0) {
         const h = -b / (2 * a);
         const k = a * h * h + b * h + c;
         items.push({ icon: '📍', label: `Vertex (${round(h)}, ${round(k)})`, color: '#a855f7' });
+        items.push({ icon: '📏', label: `Axis of Symmetry x = ${round(h)}`, color: '#06b6d4' });
       }
 
       items.push({ icon: '🎯', label: `Y-Intercept (0, ${round(c)})`, color: '#10b981' });
@@ -1153,34 +1495,121 @@ const GraphObject = (() => {
       if (a !== 0) {
         const disc = b * b - 4 * a * c;
         if (disc > 0) {
-          items.push({ icon: '✨', label: `2 Real Roots (Δ = ${round(disc)})`, color: '#fbbf24' });
-        } else if (disc === 0) {
-          items.push({ icon: '✨', label: `1 Real Root (Δ = 0)`, color: '#fbbf24' });
+          const r1 = (-b + Math.sqrt(disc)) / (2 * a);
+          const r2 = (-b - Math.sqrt(disc)) / (2 * a);
+          items.push({ icon: '✨', label: `2 Real Roots: ${round(r1)}, ${round(r2)}`, sub: `Δ = ${round(disc)}`, color: '#fbbf24' });
+        } else if (Math.abs(disc) < 1e-9) {
+          const r = -b / (2 * a);
+          items.push({ icon: '✨', label: `1 Repeated Root: ${round(r)}`, sub: 'Δ = 0', color: '#fbbf24' });
         } else {
-          items.push({ icon: '💤', label: `No Real Roots (Δ < 0)`, color: '#64748b' });
+          items.push({ icon: '💤', label: `No Real Roots`, sub: `Δ = ${round(disc)} < 0`, color: '#64748b' });
         }
       }
-    } else if (tmpl === 'linear') {
-      const slopeDesc = a > 0 ? 'Ascending ↗' : a < 0 ? 'Descending ↘' : 'Horizontal →';
-      items.push({ icon: '📐', label: `Slope m = ${round(a)}`, sub: slopeDesc, color: '#38bdf8' });
-      items.push({ icon: '🎯', label: `Origin (0, 0)`, color: '#10b981' });
+    } else if (tmpl === 'quadratic_horizontal') {
+      const a = params.a !== undefined ? params.a : 1;
+      const b = params.b !== undefined ? params.b : 0;
+      const c = params.c !== undefined ? params.c : 0;
+
+      if (a > 0) {
+        items.push({ icon: '⊂', label: 'Opens Right', sub: 'Rightward parabola', color: '#38bdf8' });
+      } else if (a < 0) {
+        items.push({ icon: '⊃', label: 'Opens Left', sub: 'Leftward parabola', color: '#f43f5e' });
+      } else {
+        items.push({ icon: '—', label: 'Degenerate (Linear)', sub: 'a = 0', color: '#94a3b8' });
+      }
+
+      if (a !== 0) {
+        const k = -b / (2 * a);
+        const h = a * k * k + b * k + c;
+        items.push({ icon: '📍', label: `Vertex (${round(h)}, ${round(k)})`, color: '#a855f7' });
+        items.push({ icon: '📏', label: `Axis of Symmetry y = ${round(k)}`, color: '#06b6d4' });
+      }
+
+      items.push({ icon: '🎯', label: `X-Intercept (${round(c)}, 0)`, color: '#10b981' });
+
+      if (a !== 0) {
+        const disc = b * b - 4 * a * c;
+        if (disc > 0) {
+          const y1 = (-b + Math.sqrt(disc)) / (2 * a);
+          const y2 = (-b - Math.sqrt(disc)) / (2 * a);
+          items.push({ icon: '✨', label: `2 Y-Intercepts: ${round(y1)}, ${round(y2)}`, sub: `Δ = ${round(disc)}`, color: '#fbbf24' });
+        } else if (Math.abs(disc) < 1e-9) {
+          items.push({ icon: '✨', label: `1 Y-Intercept: ${round(-b / (2 * a))}`, sub: 'Δ = 0', color: '#fbbf24' });
+        } else {
+          items.push({ icon: '💤', label: 'No Y-Intercepts', sub: `Δ < 0`, color: '#64748b' });
+        }
+      }
     } else if (tmpl === 'cubic') {
+      const a = params.a !== undefined ? params.a : 1;
+      const b = params.b !== undefined ? params.b : 0;
+      const c = params.c !== undefined ? params.c : 0;
+      const d = params.d !== undefined ? params.d : 0;
+
       if (a !== 0) {
         const inflX = -b / (3 * a);
         const inflY = a * inflX * inflX * inflX + b * inflX * inflX + c * inflX + d;
-        items.push({ icon: '〰️', label: `Inflection (${round(inflX)}, ${round(inflY)})`, color: '#a855f7' });
+        items.push({ icon: '〰️', label: `Inflection Point (${round(inflX)}, ${round(inflY)})`, color: '#a855f7' });
+
+        const endDesc = a > 0 ? '↙ Down (x→-∞) to ↗ Up (x→+∞)' : '↖ Up (x→-∞) to ↘ Down (x→+∞)';
+        items.push({ icon: '🧭', label: `End Behavior`, sub: endDesc, color: '#06b6d4' });
+
+        const derivDisc = (2 * b) * (2 * b) - 4 * (3 * a) * c;
+        if (derivDisc > 0) {
+          items.push({ icon: '⚡', label: '2 Turning Points', sub: 'Local max & min', color: '#fbbf24' });
+        } else if (derivDisc === 0) {
+          items.push({ icon: '⚡', label: '1 Stationary Inflection', sub: 'Monotonic saddle', color: '#94a3b8' });
+        } else {
+          items.push({ icon: '⚡', label: a > 0 ? 'Strictly Increasing' : 'Strictly Decreasing', sub: 'No turning points', color: '#10b981' });
+        }
       }
       items.push({ icon: '🎯', label: `Y-Intercept (0, ${round(d)})`, color: '#10b981' });
     } else if (tmpl === 'exp') {
-      items.push({ icon: b > 0 ? '📈' : '📉', label: b > 0 ? 'Exponential Growth' : 'Exponential Decay', color: '#10b981' });
-      items.push({ icon: '🎯', label: `Y-Intercept (0, ${round(a)})`, color: '#38bdf8' });
-      items.push({ icon: '🚧', label: 'Asymptote y = 0', color: '#94a3b8' });
+      const a = params.a !== undefined ? params.a : 1;
+      const b = params.b !== undefined ? params.b : 2;
+      const c = params.c !== undefined ? params.c : 0;
+
+      const isGrowth = (b > 1 && a > 0) || (b < 1 && b > 0 && a < 0);
+      items.push({ icon: isGrowth ? '📈' : '📉', label: isGrowth ? 'Exponential Growth' : 'Exponential Decay', sub: `Base b = ${b}`, color: '#10b981' });
+      items.push({ icon: '🎯', label: `Y-Intercept (0, ${round(a + c)})`, color: '#38bdf8' });
+      items.push({ icon: '🚧', label: `Horiz. Asymptote y = ${round(c)}`, sub: 'Approaches without touching', color: '#f43f5e' });
     } else if (tmpl === 'ln') {
-      items.push({ icon: '🌲', label: 'Domain x > 0', color: '#f43f5e' });
-      if (b !== 0) {
-        items.push({ icon: '🎯', label: `X-Intercept (${round(1 / b)}, 0)`, color: '#10b981' });
+      const a = params.a !== undefined ? params.a : 1;
+      const h = params.h !== undefined ? params.h : 0;
+      const k = params.k !== undefined ? params.k : 0;
+
+      items.push({ icon: '🌲', label: `Domain x > ${round(h)}`, sub: 'Strictly positive argument', color: '#f43f5e' });
+      items.push({ icon: '🚧', label: `Vert. Asymptote x = ${round(h)}`, color: '#f43f5e' });
+      if (a !== 0) {
+        const rootX = h + Math.exp(-k / a);
+        if (isFinite(rootX)) {
+          items.push({ icon: '🎯', label: `X-Intercept (${round(rootX)}, 0)`, color: '#10b981' });
+        }
       }
-      items.push({ icon: '🚧', label: 'Asymptote x = 0', color: '#94a3b8' });
+    } else if (tmpl && tmpl.startsWith('trig_')) {
+      const a = params.a !== undefined ? params.a : 1;
+      const b = params.b !== undefined ? params.b : 1;
+      const c = params.c !== undefined ? params.c : 0;
+      const d = params.d !== undefined ? params.d : 0;
+
+      const isTanCot = tmpl === 'trig_tan' || tmpl === 'trig_cot';
+      const periodObj = formatPeriod(isTanCot, b);
+
+      items.push({ icon: '⏱️', label: `Period T = ${periodObj.exact}`, sub: `≈ ${periodObj.approx} rad`, color: '#38bdf8' });
+      items.push({ icon: '📊', label: `Frequency |b| = ${round(Math.abs(b))}`, color: '#10b981' });
+
+      if (tmpl === 'trig_sin' || tmpl === 'trig_cos') {
+        const amp = Math.abs(a);
+        items.push({ icon: '📏', label: `Amplitude = ${round(amp)}`, color: '#fbbf24' });
+        items.push({ icon: '🔝', label: `Range [${round(d - amp)}, ${round(d + amp)}]`, color: '#a855f7' });
+      } else {
+        items.push({ icon: '↕️', label: `Vertical Scale |a| = ${round(Math.abs(a))}`, color: '#fbbf24' });
+      }
+
+      items.push({ icon: '〰️', label: `Midline y = ${round(d)}`, color: '#06b6d4' });
+
+      if (b !== 0 && c !== 0) {
+        items.push({ icon: '↔️', label: `Phase Shift: ${round(-c / b)}`, color: '#f59e0b' });
+      }
     }
 
     return items;
@@ -1188,46 +1617,195 @@ const GraphObject = (() => {
 
   // Tab 2: Interactive Real-Time Coefficient Parameters (Manual Input, No Sliders)
   function renderSlidersTab(container, g) {
-    const tmpl = g.activeTemplate || 'quadratic';
-    const params = g.params || { a: 1, b: 0, c: 0, d: 0 };
+    const tmpl = g.activeTemplate || 'quadratic_vertical';
+    const params = g.params || {};
 
     let currentFormula = '';
-    if (tmpl === 'linear') currentFormula = `y = ${formatLinear(params.a)}`;
-    else if (tmpl === 'quadratic') currentFormula = `y = ${formatQuadratic(params.a, params.b, params.c)}`;
-    else if (tmpl === 'cubic') currentFormula = `y = ${formatCubic(params.a, params.b, params.c, params.d)}`;
-    else if (tmpl === 'exp') currentFormula = `y = ${formatExponential(params.a, params.b !== undefined ? params.b : 1)}`;
-    else if (tmpl === 'ln') currentFormula = `y = ${formatLogarithmic(params.a, params.b !== undefined ? params.b : 1)}`;
+    let isXEquals = false;
+
+    if (tmpl === 'linear') {
+      const m = params.m !== undefined ? params.m : (params.a !== undefined ? params.a : 1);
+      const c = params.c !== undefined ? params.c : 0;
+      currentFormula = `y = ${formatLinear(m, c)}`;
+    } else if (tmpl === 'quadratic' || tmpl === 'quadratic_vertical') {
+      currentFormula = `y = ${formatQuadratic(params.a !== undefined ? params.a : 1, params.b || 0, params.c || 0)}`;
+    } else if (tmpl === 'quadratic_horizontal') {
+      isXEquals = true;
+      currentFormula = `x = ${formatHorizontalQuadratic(params.a !== undefined ? params.a : 1, params.b || 0, params.c || 0)}`;
+    } else if (tmpl === 'cubic') {
+      currentFormula = `y = ${formatCubic(params.a !== undefined ? params.a : 1, params.b || 0, params.c || 0, params.d || 0)}`;
+    } else if (tmpl === 'exp') {
+      currentFormula = `y = ${formatExponential(params.a !== undefined ? params.a : 1, params.b !== undefined ? params.b : 2, params.c || 0)}`;
+    } else if (tmpl === 'ln') {
+      currentFormula = `y = ${formatLogarithmic(params.a !== undefined ? params.a : 1, params.h || 0, params.k || 0)}`;
+    } else if (tmpl && tmpl.startsWith('trig_')) {
+      let fnName = 'sin';
+      if (tmpl === 'trig_csc') fnName = 'csc';
+      else if (tmpl === 'trig_cos') fnName = 'cos';
+      else if (tmpl === 'trig_sec') fnName = 'sec';
+      else if (tmpl === 'trig_tan') fnName = 'tan';
+      else if (tmpl === 'trig_cot') fnName = 'cot';
+      currentFormula = `y = ${formatTrig(fnName, params.a !== undefined ? params.a : 1, params.b !== undefined ? params.b : 1, params.c || 0, params.d || 0)}`;
+    }
 
     const insights = computeMathInsights(tmpl, params);
+    const round = (num) => Math.round(num * 100) / 100;
 
-    // Contextual role descriptions
-    const aDesc = tmpl === 'linear' 
-      ? { title: 'Coefficient a (Slope / Rate of Change)', sub: 'Controls line steepness: rise over run (m = a)' }
-      : tmpl === 'quadratic'
-      ? { title: 'Coefficient a (Steepness & Curvature)', sub: 'a > 0 opens up ∪, a < 0 opens down ∩; magnitude controls width' }
-      : tmpl === 'cubic'
-      ? { title: 'Coefficient a (Cubic Scale & Steepness)', sub: 'Controls cubic growth and end-behavior steepness' }
-      : tmpl === 'exp'
-      ? { title: 'Coefficient a (Vertical Amplitude / Initial Value)', sub: 'Sets the y-intercept at (0, a) and overall vertical scale' }
-      : { title: 'Coefficient a (Vertical Scaling Factor)', sub: 'Dilates or compresses the curve vertically' };
+    // Optional two-level variant switcher header
+    let variantToggleHtml = '';
+    if (tmpl === 'quadratic' || tmpl === 'quadratic_vertical' || tmpl === 'quadratic_horizontal') {
+      variantToggleHtml = `
+        <div class="gos-variant-toggle">
+          <button class="gos-variant-btn ${tmpl !== 'quadratic_horizontal' ? 'active' : ''}" onclick="GraphObject.applyTemplate('quadratic_vertical')">
+            <span style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;">Vertical Parabola</span>
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#eab308;">y = ax² + bx + c</span>
+          </button>
+          <button class="gos-variant-btn ${tmpl === 'quadratic_horizontal' ? 'active' : ''}" onclick="GraphObject.applyTemplate('quadratic_horizontal')">
+            <span style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;">Horizontal Parabola</span>
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#f59e0b;">x = ay² + by + c</span>
+          </button>
+        </div>
+      `;
+    } else if (tmpl === 'trig_sin' || tmpl === 'trig_csc') {
+      variantToggleHtml = `
+        <div class="gos-variant-toggle">
+          <button class="gos-variant-btn ${tmpl === 'trig_sin' ? 'active' : ''}" onclick="GraphObject.applyTemplate('trig_sin')">
+            <span style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;">Sine Wave</span>
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#38bdf8;">y = a·sin(bx + c) + d</span>
+          </button>
+          <button class="gos-variant-btn ${tmpl === 'trig_csc' ? 'active' : ''}" onclick="GraphObject.applyTemplate('trig_csc')">
+            <span style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;">Cosecant (Reciprocal)</span>
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#0284c7;">y = a·csc(bx + c) + d</span>
+          </button>
+        </div>
+      `;
+    } else if (tmpl === 'trig_cos' || tmpl === 'trig_sec') {
+      variantToggleHtml = `
+        <div class="gos-variant-toggle">
+          <button class="gos-variant-btn ${tmpl === 'trig_cos' ? 'active' : ''}" onclick="GraphObject.applyTemplate('trig_cos')">
+            <span style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;">Cosine Wave</span>
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#06b6d4;">y = a·cos(bx + c) + d</span>
+          </button>
+          <button class="gos-variant-btn ${tmpl === 'trig_sec' ? 'active' : ''}" onclick="GraphObject.applyTemplate('trig_sec')">
+            <span style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;">Secant (Reciprocal)</span>
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#0891b2;">y = a·sec(bx + c) + d</span>
+          </button>
+        </div>
+      `;
+    } else if (tmpl === 'trig_tan' || tmpl === 'trig_cot') {
+      variantToggleHtml = `
+        <div class="gos-variant-toggle">
+          <button class="gos-variant-btn ${tmpl === 'trig_tan' ? 'active' : ''}" onclick="GraphObject.applyTemplate('trig_tan')">
+            <span style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;">Tangent</span>
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#f59e0b;">y = a·tan(bx + c) + d</span>
+          </button>
+          <button class="gos-variant-btn ${tmpl === 'trig_cot' ? 'active' : ''}" onclick="GraphObject.applyTemplate('trig_cot')">
+            <span style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;">Cotangent (Reciprocal)</span>
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#d97706;">y = a·cot(bx + c) + d</span>
+          </button>
+        </div>
+      `;
+    }
 
-    const bDesc = tmpl === 'quadratic'
-      ? { title: 'Coefficient b (Horizontal Axis Shift)', sub: 'Shifts parabola line of symmetry: x = -b / (2a)' }
-      : tmpl === 'cubic'
-      ? { title: 'Coefficient b (Quadratic Term / Bend)', sub: 'Shifts inflection point location: x = -b / (3a)' }
-      : tmpl === 'exp'
-      ? { title: 'Coefficient b (Growth / Decay Rate)', sub: 'b > 0 exponential growth, b < 0 exponential decay' }
-      : { title: 'Coefficient b (Horizontal Dilation / Frequency)', sub: 'Compresses curve horizontally; root at x = 1/b' };
+    // Dedicated Trigonometric Wave Period & Frequency Card
+    let periodCardHtml = '';
+    if (tmpl && tmpl.startsWith('trig_')) {
+      const isTanCot = tmpl === 'trig_tan' || tmpl === 'trig_cot';
+      const bVal = params.b !== undefined ? params.b : 1;
+      const aVal = params.a !== undefined ? params.a : 1;
+      const dVal = params.d !== undefined ? params.d : 0;
+      const periodObj = formatPeriod(isTanCot, bVal);
 
-    const cDesc = tmpl === 'quadratic'
-      ? { title: 'Coefficient c (Y-Intercept / Vertical Offset)', sub: 'Constant offset: where curve crosses y-axis at (0, c)' }
-      : { title: 'Coefficient c (Linear Slope at Inflection)', sub: 'Instantaneous slope of the curve at inflection' };
+      periodCardHtml = `
+        <div class="gos-period-card">
+          <div class="gos-period-header">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="gos-section-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;border-color:rgba(56,189,248,0.35);">TEACHING CONCEPT</span>
+              <span style="font-weight:800;font-size:13px;color:#f8fafc;">Wave Period & Frequency Analysis</span>
+            </div>
+            <span class="gos-math-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;">Period T = ${isTanCot ? 'π / |b|' : '2π / |b|'}</span>
+          </div>
+          <div class="gos-period-grid">
+            <div class="gos-period-stat">
+              <span class="gos-period-label">Period (T)</span>
+              <span class="gos-period-value" id="gos-trig-period-val" style="color:#38bdf8;">${periodObj.exact}</span>
+              <span class="gos-period-sub" id="gos-trig-period-sub">≈ ${periodObj.approx} rad</span>
+            </div>
+            <div class="gos-period-stat">
+              <span class="gos-period-label">Frequency (|b|)</span>
+              <span class="gos-period-value" id="gos-trig-freq-val" style="color:#10b981;">${round(Math.abs(bVal))}</span>
+              <span class="gos-period-sub">Cycles per ${isTanCot ? 'π' : '2π'}</span>
+            </div>
+            <div class="gos-period-stat">
+              <span class="gos-period-label">Amplitude (|a|)</span>
+              <span class="gos-period-value" id="gos-trig-amp-val" style="color:#fbbf24;">${round(Math.abs(aVal))}</span>
+              <span class="gos-period-sub">${(tmpl === 'trig_sin' || tmpl === 'trig_cos') ? 'Peak to midline' : 'Vertical stretch'}</span>
+            </div>
+            <div class="gos-period-stat">
+              <span class="gos-period-label">Midline (y)</span>
+              <span class="gos-period-value" id="gos-trig-midline-val" style="color:#c084fc;">y = ${round(dVal)}</span>
+              <span class="gos-period-sub">Center axis</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
-    const dDesc = { title: 'Coefficient d (Vertical Constant / Y-Intercept)', sub: 'Translates entire cubic curve vertically at (0, d)' };
+    // Build parameter cards list
+    let paramCardsHtml = '';
+    if (tmpl === 'linear') {
+      const mVal = params.m !== undefined ? params.m : (params.a !== undefined ? params.a : 1);
+      const cVal = params.c !== undefined ? params.c : 0;
+      paramCardsHtml = `
+        ${renderParamRow('m', 'Slope / Gradient (m)', 'Rate of change: rise over run; m > 0 increasing ↗, m < 0 decreasing ↘', mVal, 1, 0.5, [-3, -2, -1, -0.5, 0.5, 1, 2, 3], { bg: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: 'rgba(56,189,248,0.35)' })}
+        ${renderParamRow('c', 'Y-Intercept (c)', 'Vertical offset: coordinate where line crosses y-axis at (0, c)', cVal, 0, 0.5, [-4, -2, -1, 0, 1, 2, 4], { bg: 'rgba(16,185,129,0.15)', color: '#10b981', border: 'rgba(16,185,129,0.35)' })}
+      `;
+    } else if (tmpl === 'quadratic' || tmpl === 'quadratic_vertical') {
+      paramCardsHtml = `
+        ${renderParamRow('a', 'Coefficient a (Curvature & Opening)', 'a > 0 opens upward ∪, a < 0 opens downward ∩; magnitude controls width', params.a !== undefined ? params.a : 1, 1, 0.1, [-3, -2, -1, -0.5, 0.5, 1, 2, 3], { bg: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: 'rgba(56,189,248,0.35)' })}
+        ${renderParamRow('b', 'Coefficient b (Axis of Symmetry)', 'Horizontal shift of parabola axis of symmetry: x = -b / (2a)', params.b !== undefined ? params.b : 0, 0, 0.5, [-3, -2, -1, 0, 1, 2, 3], { bg: 'rgba(16,185,129,0.15)', color: '#10b981', border: 'rgba(16,185,129,0.35)' })}
+        ${renderParamRow('c', 'Coefficient c (Y-Intercept)', 'Vertical offset: where curve crosses y-axis at (0, c)', params.c !== undefined ? params.c : 0, 0, 0.5, [-4, -2, -1, 0, 1, 2, 4], { bg: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: 'rgba(245,158,11,0.35)' })}
+      `;
+    } else if (tmpl === 'quadratic_horizontal') {
+      paramCardsHtml = `
+        ${renderParamRow('a', 'Coefficient a (Opening & Curvature)', 'a > 0 opens right ⊂, a < 0 opens left ⊃; magnitude controls width', params.a !== undefined ? params.a : 1, 1, 0.1, [-3, -2, -1, -0.5, 0.5, 1, 2, 3], { bg: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: 'rgba(56,189,248,0.35)' })}
+        ${renderParamRow('b', 'Coefficient b (Axis of Symmetry)', 'Vertical shift of horizontal axis: y = -b / (2a)', params.b !== undefined ? params.b : 0, 0, 0.5, [-3, -2, -1, 0, 1, 2, 3], { bg: 'rgba(16,185,129,0.15)', color: '#10b981', border: 'rgba(16,185,129,0.35)' })}
+        ${renderParamRow('c', 'Coefficient c (X-Intercept)', 'Horizontal constant: where curve crosses x-axis at (c, 0)', params.c !== undefined ? params.c : 0, 0, 0.5, [-4, -2, -1, 0, 1, 2, 4], { bg: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: 'rgba(245,158,11,0.35)' })}
+      `;
+    } else if (tmpl === 'cubic') {
+      paramCardsHtml = `
+        ${renderParamRow('a', 'Coefficient a (Cubic Scale & End-Behavior)', 'Controls cubic steepness and progressive end-behavior', params.a !== undefined ? params.a : 1, 1, 0.1, [-2, -1, -0.5, 0.5, 1, 2], { bg: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: 'rgba(56,189,248,0.35)' })}
+        ${renderParamRow('b', 'Coefficient b (Quadratic Term / Bend)', 'Shifts inflection point horizontally: x = -b / (3a)', params.b !== undefined ? params.b : 0, 0, 0.5, [-3, -2, -1, 0, 1, 2, 3], { bg: 'rgba(16,185,129,0.15)', color: '#10b981', border: 'rgba(16,185,129,0.35)' })}
+        ${renderParamRow('c', 'Coefficient c (Slope at Inflection)', 'Instantaneous linear gradient at the inflection point', params.c !== undefined ? params.c : 0, 0, 0.5, [-3, -2, -1, 0, 1, 2, 3], { bg: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: 'rgba(245,158,11,0.35)' })}
+        ${renderParamRow('d', 'Coefficient d (Y-Intercept)', 'Vertical constant: where cubic crosses y-axis at (0, d)', params.d !== undefined ? params.d : 0, 0, 0.5, [-4, -2, 0, 2, 4], { bg: 'rgba(168,85,247,0.15)', color: '#c084fc', border: 'rgba(168,85,247,0.35)' })}
+      `;
+    } else if (tmpl === 'exp') {
+      paramCardsHtml = `
+        ${renderParamRow('a', 'Coefficient a (Vertical Scale / Reflection)', 'Initial amplitude factor: y-intercept is (0, a + c)', params.a !== undefined ? params.a : 1, 1, 0.5, [-3, -2, -1, 0.5, 1, 2, 3], { bg: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: 'rgba(56,189,248,0.35)' })}
+        ${renderParamRow('b', 'Base b (Growth / Decay Factor)', 'b > 1 exponential growth, 0 < b < 1 exponential decay', params.b !== undefined ? params.b : 2, 2, 0.5, [0.5, 1.5, 2, 2.718, 3], { bg: 'rgba(16,185,129,0.15)', color: '#10b981', border: 'rgba(16,185,129,0.35)' })}
+        ${renderParamRow('c', 'Vertical Shift c (Horizontal Asymptote y = c)', 'Translates curve; horizontal asymptote updates to y = c', params.c !== undefined ? params.c : 0, 0, 0.5, [-4, -2, -1, 0, 1, 2, 4], { bg: 'rgba(244,63,94,0.15)', color: '#f43f5e', border: 'rgba(244,63,94,0.35)' })}
+      `;
+    } else if (tmpl === 'ln') {
+      paramCardsHtml = `
+        ${renderParamRow('a', 'Coefficient a (Vertical Scale Factor)', 'Dilates or compresses curve vertically; reflects across asymptote', params.a !== undefined ? params.a : 1, 1, 0.5, [-2, -1, -0.5, 0.5, 1, 2], { bg: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: 'rgba(56,189,248,0.35)' })}
+        ${renderParamRow('h', 'Horizontal Shift h (Vertical Asymptote x = h)', 'Domain is strictly x > h; asymptotic boundary at x = h', params.h !== undefined ? params.h : 0, 0, 0.5, [-3, -2, -1, 0, 1, 2, 3], { bg: 'rgba(244,63,94,0.15)', color: '#f43f5e', border: 'rgba(244,63,94,0.35)' })}
+        ${renderParamRow('k', 'Vertical Shift k (Vertical Offset)', 'Translates entire logarithmic curve vertically', params.k !== undefined ? params.k : 0, 0, 0.5, [-4, -2, -1, 0, 1, 2, 4], { bg: 'rgba(16,185,129,0.15)', color: '#10b981', border: 'rgba(16,185,129,0.35)' })}
+      `;
+    } else if (tmpl && tmpl.startsWith('trig_')) {
+      const isSinCos = tmpl === 'trig_sin' || tmpl === 'trig_cos';
+      paramCardsHtml = `
+        ${renderParamRow('a', 'Amplitude / Vertical Scale (a)', isSinCos ? 'Peak displacement from midline: Amplitude = |a|' : 'Vertical scaling & dilation factor', params.a !== undefined ? params.a : 1, 1, 0.5, [-3, -2, -1, 0.5, 1, 2, 3], { bg: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: 'rgba(56,189,248,0.35)' })}
+        ${renderParamRow('b', 'Frequency Parameter (b)', 'Directly controls period: T = 2π/|b| (or π/|b|)', params.b !== undefined ? params.b : 1, 1, 0.5, [0.5, 1, 1.5, 2, 3, 4], { bg: 'rgba(16,185,129,0.15)', color: '#10b981', border: 'rgba(16,185,129,0.35)' })}
+        ${renderParamRow('c', 'Phase Shift Parameter (c)', 'Horizontal translation: Phase shift = -c / b', params.c !== undefined ? params.c : 0, 0, 0.5, [-3, -2, -1, 0, 1, 2, 3], { bg: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: 'rgba(245,158,11,0.35)' })}
+        ${renderParamRow('d', 'Vertical Shift (d) / Midline', 'Translates wave vertically; center midline is y = d', params.d !== undefined ? params.d : 0, 0, 0.5, [-4, -2, -1, 0, 1, 2, 4], { bg: 'rgba(168,85,247,0.15)', color: '#c084fc', border: 'rgba(168,85,247,0.35)' })}
+      `;
+    }
 
     container.innerHTML = `
+      ${variantToggleHtml}
+
       <!-- Dynamic Live Equation Header Banner -->
-      <div style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);border-radius:12px;padding:14px 18px;text-align:center;">
+      <div style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);border-radius:12px;padding:14px 18px;text-align:center;margin-bottom:12px;">
         <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Current Active Equation</div>
         <div id="gos-live-formula" style="font-size:24px;font-weight:800;color:#38bdf8;font-family:monospace;letter-spacing:0.02em;">
           ${currentFormula}
@@ -1243,21 +1821,11 @@ const GraphObject = (() => {
         </div>
       </div>
 
+      ${periodCardHtml}
+
       <!-- Manual Parameter Cards List (Direct Input, No Lines / Sliders) -->
       <div style="display:flex;flex-direction:column;gap:12px;">
-        ${renderParamRow('a', aDesc.title, aDesc.sub, params.a !== undefined ? params.a : 1, 1, 0.1, [-3, -2, -1, -0.5, 0.5, 1, 2, 3], { bg: 'rgba(56,189,248,0.15)', color: '#38bdf8', border: 'rgba(56,189,248,0.35)' })}
-        
-        ${(tmpl === 'quadratic' || tmpl === 'cubic' || tmpl === 'exp' || tmpl === 'ln') 
-          ? renderParamRow('b', bDesc.title, bDesc.sub, params.b !== undefined ? params.b : ((tmpl === 'exp' || tmpl === 'ln') ? 1 : 0), ((tmpl === 'exp' || tmpl === 'ln') ? 1 : 0), 0.1, [-3, -2, -1, 0, 1, 2, 3], { bg: 'rgba(16,185,129,0.15)', color: '#10b981', border: 'rgba(16,185,129,0.35)' }) 
-          : ''}
-        
-        ${(tmpl === 'quadratic' || tmpl === 'cubic') 
-          ? renderParamRow('c', cDesc.title, cDesc.sub, params.c !== undefined ? params.c : 0, 0, 0.5, [-4, -2, -1, 0, 1, 2, 4], { bg: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: 'rgba(245,158,11,0.35)' }) 
-          : ''}
-        
-        ${tmpl === 'cubic' 
-          ? renderParamRow('d', dDesc.title, dDesc.sub, params.d !== undefined ? params.d : 0, 0, 0.5, [-4, -2, 0, 2, 4], { bg: 'rgba(168,85,247,0.15)', color: '#c084fc', border: 'rgba(168,85,247,0.35)' }) 
-          : ''}
+        ${paramCardsHtml}
       </div>
     `;
   }
@@ -1309,7 +1877,7 @@ const GraphObject = (() => {
               <button class="gos-preset-chip gos-chip-${key} ${isActive ? 'active' : ''}" 
                 data-val="${p}"
                 onclick="GraphObject.setParam('${key}', ${p})">
-                ${p > 0 && key !== 'a' ? '+' + p : p}
+                ${p > 0 && key !== 'a' && key !== 'm' ? '+' + p : p}
               </button>
             `;
           }).join('')}
@@ -1336,7 +1904,7 @@ const GraphObject = (() => {
         ${eqs.map((eq, i) => `
           <div class="gos-eq-row" data-index="${i}" style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.03);padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);">
             <input type="checkbox" ${eq.visible ? 'checked' : ''} onchange="GraphObject.toggleEqVisible(${i}, this.checked)" title="Show/Hide">
-            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#94a3b8;">f${i+1}(x)=</span>
+            <span style="font-family:monospace;font-size:12px;font-weight:700;color:#94a3b8;">${eq.isXEquals ? 'x(y)=' : `f${i+1}(x)=`}</span>
             <input type="text" class="gos-expr-input" value="${eq.expr}" style="flex:1;padding:6px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#f8fafc;font-family:monospace;font-size:13px;" oninput="GraphObject.updateEqExpr(${i}, this.value)">
             <input type="color" value="${eq.color || '#38bdf8'}" style="width:30px;height:30px;border:none;border-radius:6px;background:transparent;cursor:pointer;" onchange="GraphObject.updateEqColor(${i}, this.value)">
             <button class="bbm-close" style="width:26px;height:26px;" onclick="GraphObject.removeEqRow(${i})" title="Delete">✕</button>
@@ -1358,7 +1926,7 @@ const GraphObject = (() => {
           </div>
           <div>
             <label style="font-size:10px;color:#94a3b8;display:block;">X Max</label>
-            <input type="number" id="gos-xmax" value="${g.xMax}" style="width:100%;padding:6px;background:rgba(255,255,255,0.15);border-radius:6px;color:#fff;">
+            <input type="number" id="gos-xmax" value="${g.xMax}" style="width:100%;padding:6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#fff;">
           </div>
           <div>
             <label style="font-size:10px;color:#94a3b8;display:block;">Y Min</label>
@@ -1404,26 +1972,46 @@ const GraphObject = (() => {
   // 7. STUDIO ACTIONS & INTERACTIVE CALLBACKS
   // ─────────────────────────────────────────────────────────────────────────────
 
+  function getDefaultVal(key, tmpl) {
+    if (key === 'm' || key === 'a') return 1;
+    if (key === 'b') {
+      if (tmpl === 'exp') return 2;
+      if (tmpl && tmpl.startsWith('trig_')) return 1;
+      return 0;
+    }
+    return 0;
+  }
+
   function applyTemplate(type) {
     if (!editingGraph) return;
     editingGraph.activeTemplate = type;
 
-    let initialExpr = 'x^2';
+    let initialExpr = 'x²';
     let defaultParams = { a: 1, b: 0, c: 0, d: 0 };
     let initialColor = '#38bdf8';
+    let isXEquals = false;
 
     if (type === 'linear') {
-      defaultParams = { a: 2 };
-      initialExpr = '2x';
+      defaultParams = { m: 1, c: 0 };
+      initialExpr = 'x';
       initialColor = '#38bdf8';
       editingGraph.xMin = -10; editingGraph.xMax = 10;
       editingGraph.yMin = -10; editingGraph.yMax = 10;
-    } else if (type === 'quadratic') {
+    } else if (type === 'quadratic' || type === 'quadratic_vertical') {
+      type = 'quadratic_vertical';
+      editingGraph.activeTemplate = type;
       defaultParams = { a: 1, b: 0, c: 0 };
       initialExpr = 'x²';
       initialColor = '#eab308';
       editingGraph.xMin = -6; editingGraph.xMax = 6;
       editingGraph.yMin = -2; editingGraph.yMax = 12;
+    } else if (type === 'quadratic_horizontal') {
+      defaultParams = { a: 1, b: 0, c: 0 };
+      initialExpr = 'y²';
+      initialColor = '#f59e0b';
+      isXEquals = true;
+      editingGraph.xMin = -2; editingGraph.xMax = 12;
+      editingGraph.yMin = -6; editingGraph.yMax = 6;
     } else if (type === 'cubic') {
       defaultParams = { a: 1, b: 0, c: 0, d: 0 };
       initialExpr = 'x³';
@@ -1431,22 +2019,58 @@ const GraphObject = (() => {
       editingGraph.xMin = -5; editingGraph.xMax = 5;
       editingGraph.yMin = -15; editingGraph.yMax = 15;
     } else if (type === 'exp') {
-      defaultParams = { a: 1, b: 1 };
-      initialExpr = 'eˣ';
+      defaultParams = { a: 1, b: 2, c: 0 };
+      initialExpr = '2ˣ';
       initialColor = '#10b981';
-      editingGraph.xMin = -4; editingGraph.xMax = 4;
-      editingGraph.yMin = -1; editingGraph.yMax = 10;
+      editingGraph.xMin = -5; editingGraph.xMax = 5;
+      editingGraph.yMin = -2; editingGraph.yMax = 10;
     } else if (type === 'ln') {
-      defaultParams = { a: 1, b: 1 };
+      defaultParams = { a: 1, h: 0, k: 0 };
       initialExpr = 'ln(x)';
       initialColor = '#f43f5e';
-      editingGraph.xMin = -1; editingGraph.xMax = 8;
-      editingGraph.yMin = -4; editingGraph.yMax = 4;
+      editingGraph.xMin = -2; editingGraph.xMax = 10;
+      editingGraph.yMin = -5; editingGraph.yMax = 5;
+    } else if (type === 'trig_sin') {
+      defaultParams = { a: 1, b: 1, c: 0, d: 0 };
+      initialExpr = 'sin(x)';
+      initialColor = '#38bdf8';
+      editingGraph.xMin = -7; editingGraph.xMax = 7;
+      editingGraph.yMin = -3; editingGraph.yMax = 3;
+    } else if (type === 'trig_csc') {
+      defaultParams = { a: 1, b: 1, c: 0, d: 0 };
+      initialExpr = 'csc(x)';
+      initialColor = '#0284c7';
+      editingGraph.xMin = -7; editingGraph.xMax = 7;
+      editingGraph.yMin = -6; editingGraph.yMax = 6;
+    } else if (type === 'trig_cos') {
+      defaultParams = { a: 1, b: 1, c: 0, d: 0 };
+      initialExpr = 'cos(x)';
+      initialColor = '#06b6d4';
+      editingGraph.xMin = -7; editingGraph.xMax = 7;
+      editingGraph.yMin = -3; editingGraph.yMax = 3;
+    } else if (type === 'trig_sec') {
+      defaultParams = { a: 1, b: 1, c: 0, d: 0 };
+      initialExpr = 'sec(x)';
+      initialColor = '#0891b2';
+      editingGraph.xMin = -7; editingGraph.xMax = 7;
+      editingGraph.yMin = -6; editingGraph.yMax = 6;
+    } else if (type === 'trig_tan') {
+      defaultParams = { a: 1, b: 1, c: 0, d: 0 };
+      initialExpr = 'tan(x)';
+      initialColor = '#f59e0b';
+      editingGraph.xMin = -7; editingGraph.xMax = 7;
+      editingGraph.yMin = -6; editingGraph.yMax = 6;
+    } else if (type === 'trig_cot') {
+      defaultParams = { a: 1, b: 1, c: 0, d: 0 };
+      initialExpr = 'cot(x)';
+      initialColor = '#d97706';
+      editingGraph.xMin = -7; editingGraph.xMax = 7;
+      editingGraph.yMin = -6; editingGraph.yMax = 6;
     }
 
     editingGraph.params = defaultParams;
     editingGraph.equations = [
-      { id: Date.now(), label: 'f₁(x)', expr: initialExpr, color: initialColor, lineWidth: 2.8, visible: true }
+      { id: Date.now(), label: isXEquals ? 'x(y)' : 'f₁(x)', expr: initialExpr, color: initialColor, lineWidth: 2.8, visible: true, isXEquals }
     ];
 
     if (typeof Canvas !== 'undefined' && Canvas.renderShapes) {
@@ -1456,7 +2080,7 @@ const GraphObject = (() => {
 
     switchStudioTab('sliders');
     if (typeof App !== 'undefined' && App.showToast) {
-      App.showToast(`Applied ${type.toUpperCase()} template`);
+      App.showToast(`Applied ${type.replace('trig_', '').replace('_', ' ').toUpperCase()} template`);
     }
   }
 
@@ -1493,7 +2117,8 @@ const GraphObject = (() => {
   function stepParam(key, delta) {
     if (!editingGraph) return;
     if (!editingGraph.params) editingGraph.params = {};
-    const defaultVal = key === 'a' ? 1 : 0;
+    const tmpl = editingGraph.activeTemplate || 'quadratic_vertical';
+    const defaultVal = getDefaultVal(key, tmpl);
     let cur = editingGraph.params[key] !== undefined ? editingGraph.params[key] : defaultVal;
     let next = Math.round((cur + delta) * 100) / 100;
     setParam(key, next);
@@ -1529,7 +2154,8 @@ const GraphObject = (() => {
 
   function commitManualInput(key, rawVal) {
     if (!editingGraph) return;
-    const defaultVal = key === 'a' ? 1 : 0;
+    const tmpl = editingGraph.activeTemplate || 'quadratic_vertical';
+    const defaultVal = getDefaultVal(key, tmpl);
     let parsed = parseFloat(rawVal);
     if (isNaN(parsed)) parsed = defaultVal;
     setParam(key, parsed);
@@ -1539,23 +2165,46 @@ const GraphObject = (() => {
 
   function updateFormulaAndInsights() {
     if (!editingGraph) return;
-    const tmpl = editingGraph.activeTemplate || 'quadratic';
+    const tmpl = editingGraph.activeTemplate || 'quadratic_vertical';
     const params = editingGraph.params || {};
 
     let formatted = '';
-    if (tmpl === 'linear') formatted = formatLinear(params.a);
-    else if (tmpl === 'quadratic') formatted = formatQuadratic(params.a, params.b, params.c);
-    else if (tmpl === 'cubic') formatted = formatCubic(params.a, params.b, params.c, params.d);
-    else if (tmpl === 'exp') formatted = formatExponential(params.a, params.b !== undefined ? params.b : 1);
-    else if (tmpl === 'ln') formatted = formatLogarithmic(params.a, params.b !== undefined ? params.b : 1);
+    let isXEquals = false;
+
+    if (tmpl === 'linear') {
+      const m = params.m !== undefined ? params.m : (params.a !== undefined ? params.a : 1);
+      const c = params.c !== undefined ? params.c : 0;
+      formatted = formatLinear(m, c);
+    } else if (tmpl === 'quadratic' || tmpl === 'quadratic_vertical') {
+      formatted = formatQuadratic(params.a !== undefined ? params.a : 1, params.b || 0, params.c || 0);
+    } else if (tmpl === 'quadratic_horizontal') {
+      isXEquals = true;
+      formatted = formatHorizontalQuadratic(params.a !== undefined ? params.a : 1, params.b || 0, params.c || 0);
+    } else if (tmpl === 'cubic') {
+      formatted = formatCubic(params.a !== undefined ? params.a : 1, params.b || 0, params.c || 0, params.d || 0);
+    } else if (tmpl === 'exp') {
+      formatted = formatExponential(params.a !== undefined ? params.a : 1, params.b !== undefined ? params.b : 2, params.c || 0);
+    } else if (tmpl === 'ln') {
+      formatted = formatLogarithmic(params.a !== undefined ? params.a : 1, params.h || 0, params.k || 0);
+    } else if (tmpl && tmpl.startsWith('trig_')) {
+      let fnName = 'sin';
+      if (tmpl === 'trig_csc') fnName = 'csc';
+      else if (tmpl === 'trig_cos') fnName = 'cos';
+      else if (tmpl === 'trig_sec') fnName = 'sec';
+      else if (tmpl === 'trig_tan') fnName = 'tan';
+      else if (tmpl === 'trig_cot') fnName = 'cot';
+      formatted = formatTrig(fnName, params.a !== undefined ? params.a : 1, params.b !== undefined ? params.b : 1, params.c || 0, params.d || 0);
+    }
 
     if (editingGraph.equations && editingGraph.equations[0]) {
       editingGraph.equations[0].expr = formatted;
+      editingGraph.equations[0].isXEquals = isXEquals;
+      editingGraph.equations[0].label = isXEquals ? 'x(y)' : 'f₁(x)';
     }
 
     const liveBanner = document.getElementById('gos-live-formula');
     if (liveBanner) {
-      liveBanner.textContent = `y = ${formatted}`;
+      liveBanner.textContent = isXEquals ? `x = ${formatted}` : `y = ${formatted}`;
     }
 
     const insightsContainer = document.getElementById('gos-math-insights');
@@ -1568,6 +2217,23 @@ const GraphObject = (() => {
           ${item.sub ? `<span style="font-size:10px;opacity:0.75;margin-left:2px;">(${item.sub})</span>` : ''}
         </span>
       `).join('');
+    }
+
+    // Update real-time period stats if present
+    const pValEl = document.getElementById('gos-trig-period-val');
+    if (pValEl) {
+      const isTanCot = tmpl === 'trig_tan' || tmpl === 'trig_cot';
+      const b = params.b !== undefined ? params.b : 1;
+      const periodObj = formatPeriod(isTanCot, b);
+      pValEl.textContent = periodObj.exact;
+      const pSubEl = document.getElementById('gos-trig-period-sub');
+      if (pSubEl) pSubEl.textContent = `≈ ${periodObj.approx} rad`;
+      const fValEl = document.getElementById('gos-trig-freq-val');
+      if (fValEl) fValEl.textContent = `${Math.round(Math.abs(b) * 100) / 100}`;
+      const aValEl = document.getElementById('gos-trig-amp-val');
+      if (aValEl) aValEl.textContent = `${Math.round(Math.abs(params.a !== undefined ? params.a : 1) * 100) / 100}`;
+      const mValEl = document.getElementById('gos-trig-midline-val');
+      if (mValEl) mValEl.textContent = `y = ${Math.round((params.d !== undefined ? params.d : 0) * 100) / 100}`;
     }
   }
 
