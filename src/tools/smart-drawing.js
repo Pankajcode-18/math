@@ -12,17 +12,18 @@ const SmartDrawing = (() => {
   // CONFIGURATION & THRESHOLDS
   // ─────────────────────────────────────────────
   const CONFIG = {
-    confidenceThreshold: 0.65,
+    confidenceThreshold: 0.78,          // HIGH bar — only confident matches replace user ink
     clusterDebounceMs: 300,
     clusterMaxGapPx: 60,
-    closureRatioThreshold: 0.32,
-    closurePixelThreshold: 75,
-    squareRatioTolerance: 0.18,
-    rightAngleToleranceDeg: 18,
-    straightnessThreshold: 0.88,
-    circleRadialVarianceMax: 0.22,
-    circleAspectRatioMin: 0.72,
-    ellipseRadialVarianceMax: 0.30
+    minDiagonalPx: 25,                  // Ignore tiny scribbles smaller than this
+    closureRatioThreshold: 0.20,        // Strict closure: start≈end relative to path length
+    closurePixelThreshold: 40,          // Strict closure: absolute px distance
+    squareRatioTolerance: 0.15,         // Tighter square detection
+    rightAngleToleranceDeg: 14,         // Tighter right-angle detection
+    straightnessThreshold: 0.93,        // Stricter line straightness
+    circleRadialVarianceMax: 0.16,      // Tighter circle radial consistency
+    circleAspectRatioMin: 0.82,         // More circular aspect ratio required
+    ellipseRadialVarianceMax: 0.20      // Tighter ellipse fit
   };
 
   let isDrawing = false;
@@ -326,40 +327,28 @@ const SmartDrawing = (() => {
       }
     }
 
-    // ── 5. SQUARE ROOT / RADICAL (√): Tick + upward stroke + horizontal overbar ──
+    // ── 5. SQUARE ROOT / RADICAL (√): Requires tick/check + overbar, strict geometry ──
     if (n >= 2 && n <= 3) {
-      const topBarIdx = strokeBounds.findIndex((b, i) => isLinear[i] && b.w > b.h * 2 && b.minY <= bounds.minY + bounds.h * 0.35);
+      const topBarIdx = strokeBounds.findIndex((b, i) => isLinear[i] && b.w > b.h * 3 && b.w > 30 && b.minY <= bounds.minY + bounds.h * 0.25);
       if (topBarIdx !== -1) {
-        return {
-          type: 'text-block',
-          label: 'Square Root (√)',
-          confidence: 0.88,
-          shape: makeMathTextShape('√', bounds.minX + 8, bounds.cy, Math.max(26, bounds.h))
-        };
+        // Check that there's a non-bar stroke that goes up from bottom-left
+        const otherStrokes = cluster.filter((_, i) => i !== topBarIdx);
+        const hasUpStroke = otherStrokes.some(s => {
+          const sb = computeBounds(s.points);
+          return sb.h > sb.w * 0.8 && sb.maxY > bounds.cy;
+        });
+        if (hasUpStroke && bounds.w > 40 && bounds.h > 25) {
+          return {
+            type: 'text-block',
+            label: 'Square Root (√)',
+            confidence: 0.85,
+            shape: makeMathTextShape('√', bounds.minX + 8, bounds.cy, Math.max(26, bounds.h))
+          };
+        }
       }
     }
 
-    // ── 6. COORDINATE AXES: 2 perpendicular lines/arrows (X & Y axes) ──
-    if (n === 2 && isLinear[0] && isLinear[1]) {
-      const b0 = strokeBounds[0], b1 = strokeBounds[1];
-      const isCross = (b0.w > b0.h * 2 && b1.h > b1.w * 2) || (b1.w > b1.h * 2 && b0.h > b0.w * 2);
-      if (isCross && bounds.w > 60 && bounds.h > 60) {
-        return {
-          type: 'polygon',
-          label: 'Coordinate Axes',
-          confidence: 0.90,
-          shape: {
-            type: 'number-line',
-            x: Math.round(bounds.minX),
-            y: Math.round(bounds.cy),
-            length: Math.round(bounds.w),
-            min: -5,
-            max: 5,
-            color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8'
-          }
-        };
-      }
-    }
+    // NOTE: Coordinate axes detection removed — too aggressive, caused false positives with + and L-shapes
 
     // ── 7. MULTI-STROKE TRIANGLE (3 separate connected lines) ──
     if (n === 3 && isLinear[0] && isLinear[1] && isLinear[2]) {
@@ -422,32 +411,31 @@ const SmartDrawing = (() => {
   // ─────────────────────────────────────────────
   function recognizeSingleStroke(points) {
     const pts = resamplePoints(points, 5);
-    if (pts.length < 4) return null;
+    if (pts.length < 6) return null; // Need enough points for meaningful shape
 
     const bounds = computeBounds(pts);
-    if (bounds.w < 10 && bounds.h < 10) return null; // Ignore tiny dots
+    if (bounds.diag < CONFIG.minDiagonalPx) return null; // Too small to recognize
 
     const pathLength = computePathLength(pts);
+    if (pathLength < 30) return null; // Too short stroke
+
     const pStart = pts[0];
     const pEnd   = pts[pts.length - 1];
     const closureDist = Math.hypot(pEnd.x - pStart.x, pEnd.y - pStart.y);
     const closureRatio = closureDist / Math.max(1, pathLength);
     const diag = bounds.diag;
 
-    const isClosed = (closureRatio < CONFIG.closureRatioThreshold) ||
-                     (closureDist < Math.min(CONFIG.closurePixelThreshold, diag * 0.28));
+    // Strict closure test: both ratio AND pixel distance must be small
+    const isClosed = (closureRatio < CONFIG.closureRatioThreshold) &&
+                     (closureDist < Math.min(CONFIG.closurePixelThreshold, diag * 0.25));
 
     const epsilon = Math.max(4, diag * 0.045);
     const simplified = ramerDouglasPeucker(pts, epsilon);
 
     const candidates = [];
 
-    // ── Teacher Annotation: Checkmark (✓) ──
-    const checkCand = testCheckmark(pts, bounds);
-    if (checkCand) candidates.push(checkCand);
-
     if (isClosed) {
-      // ── Circle ──
+      // ── Circle (test first — most common closed shape) ──
       const circleCand = testCircle(pts, bounds, pathLength);
       if (circleCand) candidates.push(circleCand);
 
@@ -455,34 +443,22 @@ const SmartDrawing = (() => {
       const ellipseCand = testEllipse(pts, bounds);
       if (ellipseCand) candidates.push(ellipseCand);
 
-      // ── Quadrilaterals (Rectangle, Square, Parallelogram, Rhombus, Trapezium) ──
+      // ── Quadrilaterals — only if shape has clear corners ──
       const quadCand = testQuadrilateral(pts, simplified, bounds);
       if (quadCand) candidates.push(quadCand);
 
-      // ── Triangle ──
+      // ── Triangle — only if shape has exactly 3 clear corners ──
       const triCand = testTriangle(pts, simplified, bounds);
       if (triCand) candidates.push(triCand);
 
-      // ── Polygon (Pentagon, Hexagon, Octagon) ──
-      const polyCand = testPolygon(pts, simplified, bounds);
-      if (polyCand) candidates.push(polyCand);
-
     } else {
-      // ── Straight Line ──
+      // ── Straight Line (most common open stroke shape) ──
       const lineCand = testLine(pts, bounds, pathLength);
       if (lineCand) candidates.push(lineCand);
 
       // ── Arrow ──
       const arrowCand = testArrow(pts, bounds, pathLength);
       if (arrowCand) candidates.push(arrowCand);
-
-      // ── Measured Angle ──
-      const angleCand = testAngle(pts, simplified, bounds);
-      if (angleCand) candidates.push(angleCand);
-
-      // ── Math Symbol: Less than (<) / Greater than (>) ──
-      const ineqCand = testInequalitySymbol(pts, simplified, bounds);
-      if (ineqCand) candidates.push(ineqCand);
     }
 
     if (!candidates.length) return null;
@@ -494,62 +470,15 @@ const SmartDrawing = (() => {
   // ─────────────────────────────────────────────
   // CLASSIFIER: CHECKMARK (✓)
   // ─────────────────────────────────────────────
-  function testCheckmark(pts, bounds) {
-    if (pts.length < 6) return null;
-    const lowestPoint = pts.reduce((lowest, p) => p.y > lowest.y ? p : lowest, pts[0]);
-    const lowIdx = pts.indexOf(lowestPoint);
-
-    const ratio = lowIdx / pts.length;
-    if (ratio < 0.15 || ratio > 0.60) return null;
-
-    const pStart = pts[0];
-    const pEnd   = pts[pts.length - 1];
-
-    const isDownLeft = (lowestPoint.y - pStart.y) > 10;
-    const isUpRight  = (lowestPoint.y - pEnd.y) > 15;
-    const goesRight  = pEnd.x > lowestPoint.x && lowestPoint.x >= pStart.x - 10;
-
-    if (isDownLeft && isUpRight && goesRight) {
-      return {
-        type: 'text-block',
-        label: 'Checkmark (✓)',
-        confidence: 0.92,
-        shape: makeMathTextShape('✓', bounds.cx, bounds.cy, Math.max(22, bounds.diag * 0.7), '#22c55e')
-      };
-    }
-    return null;
-  }
+  // Checkmark detection removed — too aggressive, caused false positives with
+  // V-shapes, numbers, letters, and general handwriting. Teachers should use
+  // the text tool to insert ✓ symbols instead.
 
   // ─────────────────────────────────────────────
   // CLASSIFIER: INEQUALITY (< or >)
   // ─────────────────────────────────────────────
-  function testInequalitySymbol(pts, simplified, bounds) {
-    if (simplified.length !== 3) return null;
-    const p0 = simplified[0], p1 = simplified[1], p2 = simplified[2];
-    const ang1 = Math.atan2(p0.y - p1.y, p0.x - p1.x);
-    const ang2 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-    let diff = Math.abs((ang2 - ang1) * 180 / Math.PI);
-    if (diff > 180) diff = 360 - diff;
-
-    if (diff > 25 && diff < 85) {
-      if (p1.x < p0.x && p1.x < p2.x) {
-        return {
-          type: 'text-block',
-          label: 'Less Than (<)',
-          confidence: 0.90,
-          shape: makeMathTextShape('<', bounds.cx, bounds.cy, Math.max(22, bounds.h))
-        };
-      } else if (p1.x > p0.x && p1.x > p2.x) {
-        return {
-          type: 'text-block',
-          label: 'Greater Than (>)',
-          confidence: 0.90,
-          shape: makeMathTextShape('>', bounds.cx, bounds.cy, Math.max(22, bounds.h))
-        };
-      }
-    }
-    return null;
-  }
+  // Inequality symbol detection removed — caused confusion with angles, V-shapes,
+  // and general handwriting. Teachers should use the text tool for < and > symbols.
 
   // ─────────────────────────────────────────────
   // CLASSIFIER: CIRCLE
@@ -698,19 +627,8 @@ const SmartDrawing = (() => {
       }
     }
 
-    return {
-      type: 'rectangle',
-      label: 'Rectangle',
-      confidence: 0.82,
-      shape: {
-        type: 'rectangle',
-        x: Math.round(bounds.minX),
-        y: Math.round(bounds.minY),
-        w: Math.round(bounds.w),
-        h: Math.round(bounds.h),
-        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
-      }
-    };
+    // Not rectangular enough — don't force a rectangle on non-rectangular shapes
+    return null;
   }
 
   // ─────────────────────────────────────────────
@@ -771,28 +689,8 @@ const SmartDrawing = (() => {
   // ─────────────────────────────────────────────
   // CLASSIFIER: POLYGON (Pentagon, Hexagon, Octagon)
   // ─────────────────────────────────────────────
-  function testPolygon(pts, simplified, bounds) {
-    const corners = getDistinctCorners(simplified);
-    const n = corners.length;
-    if (n < 5 || n > 10) return null;
-
-    let polyName = `${n}-gon`;
-    if (n === 5) polyName = 'Pentagon';
-    if (n === 6) polyName = 'Hexagon';
-    if (n === 8) polyName = 'Octagon';
-
-    return {
-      type: 'polygon',
-      label: polyName,
-      confidence: 0.82,
-      shape: {
-        type: 'polygon',
-        polygonName: polyName,
-        points: corners.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
-        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
-      }
-    };
-  }
+  // Polygon detection (pentagon, hexagon, etc.) removed — too unreliable with
+  // freehand drawing. These complex shapes are better created via the shape tool.
 
   // ─────────────────────────────────────────────
   // CLASSIFIER: STRAIGHT LINE
@@ -837,43 +735,45 @@ const SmartDrawing = (() => {
   // CLASSIFIER: ARROW
   // ─────────────────────────────────────────────
   function testArrow(pts, bounds, pathLength) {
-    if (pts.length < 8) return null;
+    if (pts.length < 12) return null; // Need enough points
+    if (bounds.diag < 40) return null; // Arrow must be substantial
+
     const p1 = pts[0];
-    const tailCount = Math.max(4, Math.floor(pts.length * 0.25));
+    const tailCount = Math.max(4, Math.floor(pts.length * 0.20));
     const mainStem = pts.slice(0, pts.length - tailCount);
     const tipPoints = pts.slice(pts.length - tailCount);
 
-    if (mainStem.length < 4) return null;
-    const stemChord = Math.hypot(mainStem[mainStem.length - 1].x - p1.x, mainStem[mainStem.length - 1].y - p1.y);
+    if (mainStem.length < 6) return null;
+    const stemEnd = mainStem[mainStem.length - 1];
+    const stemChord = Math.hypot(stemEnd.x - p1.x, stemEnd.y - p1.y);
     const stemPath  = computePathLength(mainStem);
-    if (stemChord / Math.max(1, stemPath) < 0.84) return null;
+    if (stemChord < 35) return null; // Stem must be long enough
+    if (stemChord / Math.max(1, stemPath) < 0.90) return null; // Stem must be very straight
 
     const tipVector = {
       x: tipPoints[tipPoints.length - 1].x - tipPoints[0].x,
       y: tipPoints[tipPoints.length - 1].y - tipPoints[0].y
     };
-    const stemVector = {
-      x: mainStem[mainStem.length - 1].x - p1.x,
-      y: mainStem[mainStem.length - 1].y - p1.y
-    };
+    const stemVector = { x: stemEnd.x - p1.x, y: stemEnd.y - p1.y };
 
     const dot = stemVector.x * tipVector.x + stemVector.y * tipVector.y;
     const magS = Math.hypot(stemVector.x, stemVector.y);
     const magT = Math.hypot(tipVector.x, tipVector.y);
-    if (magT < 8 || magS < 20) return null;
+    if (magT < 10 || magS < 35) return null;
 
     const cosAngle = dot / (magS * magT);
-    if (cosAngle < 0.35) { // Hook turn at tip indicates arrow
+    // Tip must clearly hook back (cosAngle < 0.1 means ~84°+ turn)
+    if (cosAngle < 0.1) {
       return {
         type: 'arrow',
         label: 'Arrow',
-        confidence: 0.88,
+        confidence: 0.85,
         shape: {
           type: 'arrow',
           x1: Math.round(p1.x),
           y1: Math.round(p1.y),
-          x2: Math.round(mainStem[mainStem.length - 1].x),
-          y2: Math.round(mainStem[mainStem.length - 1].y),
+          x2: Math.round(stemEnd.x),
+          y2: Math.round(stemEnd.y),
           color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8'
         }
       };
@@ -881,39 +781,8 @@ const SmartDrawing = (() => {
     return null;
   }
 
-  // ─────────────────────────────────────────────
-  // CLASSIFIER: ANGLE
-  // ─────────────────────────────────────────────
-  function testAngle(pts, simplified, bounds) {
-    if (simplified.length !== 3) return null;
-    const pA = simplified[0], pV = simplified[1], pB = simplified[2];
-    const lenA = Math.hypot(pA.x - pV.x, pA.y - pV.y);
-    const lenB = Math.hypot(pB.x - pV.x, pB.y - pV.y);
-    if (lenA < 18 || lenB < 18) return null;
-
-    const angA = Math.atan2(pA.y - pV.y, pA.x - pV.x);
-    const angB = Math.atan2(pB.y - pV.y, pB.x - pV.x);
-    let diff = Math.abs((angB - angA) * 180 / Math.PI);
-    if (diff > 180) diff = 360 - diff;
-    if (diff < 12 || diff > 168) return null;
-
-    return {
-      type: 'measured-angle',
-      label: `Angle (${Math.round(diff)}°)`,
-      confidence: 0.88,
-      shape: {
-        type: 'measured-angle',
-        vx: Math.round(pV.x),
-        vy: Math.round(pV.y),
-        ax: Math.round(pA.x),
-        ay: Math.round(pA.y),
-        bx: Math.round(pB.x),
-        by: Math.round(pB.y),
-        degrees: +(diff.toFixed(1)),
-        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#f59e0b'
-      }
-    };
-  }
+  // Angle detection removed — was too aggressive, triggering on V-shapes, check marks,
+  // letters like V/W/M, and normal handwriting. Angles can be drawn using the shape tools.
 
   // ─────────────────────────────────────────────
   // SHAPE & TEXT INSTANTIATION
