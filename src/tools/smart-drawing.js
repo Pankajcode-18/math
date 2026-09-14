@@ -12,39 +12,50 @@ const SmartDrawing = (() => {
   // CONFIGURATION & THRESHOLDS
   // ─────────────────────────────────────────────
   const CONFIG = {
-    confidenceThreshold: 0.65,        // Below this, strokes are preserved as natural ink
-    clusterDebounceMs: 420,           // Wait window for multi-stroke math/shapes completion
-    clusterMaxGapPx: 60,              // Spatial proximity for grouping strokes into one object
-    closureRatioThreshold: 0.32,      // dist(start, end) / totalLength < this => closed
-    closurePixelThreshold: 75,        // Absolute distance between endpoints to consider closed
-    squareRatioTolerance: 0.18,       // |width - height| / max(w, h) < this => square
-    rightAngleToleranceDeg: 18,       // Angle deviation from 90° for rectangular corners
-    straightnessThreshold: 0.88,      // Segment length / arc length for straight lines
-    circleRadialVarianceMax: 0.22,    // Max normalized std dev of radius for circle
-    circleAspectRatioMin: 0.72,       // Min width/height ratio for circle
-    ellipseRadialVarianceMax: 0.30    // Max normalized variance for ellipse
+    confidenceThreshold: 0.65,
+    clusterDebounceMs: 300,
+    clusterMaxGapPx: 60,
+    closureRatioThreshold: 0.32,
+    closurePixelThreshold: 75,
+    squareRatioTolerance: 0.18,
+    rightAngleToleranceDeg: 18,
+    straightnessThreshold: 0.88,
+    circleRadialVarianceMax: 0.22,
+    circleAspectRatioMin: 0.72,
+    ellipseRadialVarianceMax: 0.30
   };
 
   let isDrawing = false;
-  let activeStroke = [];       // Points of current stroke: [{ x, y, t }]
-  let pendingCluster = [];     // Array of strokes belonging to current spatial cluster
+  let activeStroke = [];
+  let pendingCluster = [];
   let clusterTimer = null;
   let strokeCanvas = null;
   let strokeCtx = null;
 
+  // ── Preview canvas: DPR-aware overlay matching main canvas coordinate system ──
   function getStrokeCanvas() {
     let sc = document.getElementById('smart-draw-preview');
+    const vp = document.getElementById('canvas-viewport');
+    const zone = document.getElementById('canvas-zone');
     if (!sc) {
-      const zone = document.getElementById('canvas-zone');
-      const vp   = document.getElementById('canvas-viewport');
       sc = document.createElement('canvas');
       sc.id = 'smart-draw-preview';
       sc.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:6;';
-      const size = (typeof Canvas !== 'undefined' && Canvas.getCanvasSize) ? Canvas.getCanvasSize() : { W: 0, H: 0 };
-      sc.width = size.W || (vp ? vp.offsetWidth : 1200);
-      sc.height = size.H || (vp ? vp.offsetHeight : 800);
       if (vp) vp.appendChild(sc);
       else if (zone) zone.appendChild(sc);
+    }
+    // Sync size with main canvases (DPR-scaled internal, CSS-pixel display)
+    const size = (typeof Canvas !== 'undefined' && Canvas.getCanvasSize) ? Canvas.getCanvasSize() : { W: 1200, H: 800 };
+    const dpr = (typeof Canvas !== 'undefined' && Canvas.getDPR) ? Canvas.getDPR() : (window.devicePixelRatio || 1);
+    const w = size.W || 1200;
+    const h = size.H || 800;
+    const iw = Math.round(w * dpr);
+    const ih = Math.round(h * dpr);
+    if (sc.width !== iw || sc.height !== ih) {
+      sc.width  = iw;
+      sc.height = ih;
+      sc.style.width  = w + 'px';
+      sc.style.height = h + 'px';
     }
     return sc;
   }
@@ -58,7 +69,15 @@ const SmartDrawing = (() => {
     const sc = getStrokeCanvas();
     if (sc) {
       const ctx = sc.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, sc.width, sc.height);
+    }
+  }
+
+  // Apply same DPR + zoom + pan transform as main canvases
+  function applyPreviewTransform(ctx) {
+    if (typeof Canvas !== 'undefined' && Canvas.applyTransformToCtx) {
+      Canvas.applyTransformToCtx(ctx);
     }
   }
 
@@ -72,31 +91,27 @@ const SmartDrawing = (() => {
     strokeCanvas = getStrokeCanvas();
     strokeCtx = getStrokeCtx();
 
-    // Check if new stroke is far away from the currently pending cluster
+    // Check if new stroke is far from pending cluster → finalize previous
     if (pendingCluster.length > 0) {
       const clusterBBox = getClusterBounds(pendingCluster);
-      const distToCluster = distToBounds(pos, clusterBBox);
-      // If user moved to draw a different object, finalize previous cluster immediately
-      if (distToCluster > Math.max(CONFIG.clusterMaxGapPx, clusterBBox.diag * 0.55)) {
+      const d = distToBounds(pos, clusterBBox);
+      if (d > Math.max(CONFIG.clusterMaxGapPx, clusterBBox.diag * 0.55)) {
         flushClusterNow();
-      } else {
-        // Still drawing the same multi-stroke object, cancel pending finalize timer
-        if (clusterTimer) {
-          clearTimeout(clusterTimer);
-          clusterTimer = null;
-        }
+      } else if (clusterTimer) {
+        clearTimeout(clusterTimer);
+        clusterTimer = null;
       }
     }
 
-    // Render initial point preview
+    // Render initial dot
     if (strokeCtx) {
+      const penSize = (typeof App !== 'undefined' && App.penSize) ? App.penSize : 3;
+      const color = (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8';
       strokeCtx.save();
-      if (typeof Canvas !== 'undefined' && Canvas.applyTransformToCtx) {
-        Canvas.applyTransformToCtx(strokeCtx);
-      }
-      strokeCtx.fillStyle = (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8';
+      applyPreviewTransform(strokeCtx);
+      strokeCtx.fillStyle = color;
       strokeCtx.beginPath();
-      strokeCtx.arc(pos.x, pos.y, ((typeof App !== 'undefined' && App.penSize) ? App.penSize : 3) / 2, 0, Math.PI * 2);
+      strokeCtx.arc(pos.x, pos.y, penSize / 2, 0, Math.PI * 2);
       strokeCtx.fill();
       strokeCtx.restore();
     }
@@ -106,19 +121,18 @@ const SmartDrawing = (() => {
     if (!isDrawing || !activeStroke.length) return;
 
     const last = activeStroke[activeStroke.length - 1];
-    const dist = Math.hypot(pos.x - last.x, pos.y - last.y);
-    if (dist < 2.2) return; // Filter micro jitter
+    if (Math.hypot(pos.x - last.x, pos.y - last.y) < 2) return;
 
     activeStroke.push({ x: pos.x, y: pos.y, t: Date.now() });
 
     // Render smooth live ink preview
     if (strokeCtx && activeStroke.length >= 2) {
+      const penSize = (typeof App !== 'undefined' && App.penSize) ? App.penSize : 3;
+      const color = (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8';
       strokeCtx.save();
-      if (typeof Canvas !== 'undefined' && Canvas.applyTransformToCtx) {
-        Canvas.applyTransformToCtx(strokeCtx);
-      }
-      strokeCtx.strokeStyle = (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8';
-      strokeCtx.lineWidth   = (typeof App !== 'undefined' && App.penSize) ? App.penSize : 3;
+      applyPreviewTransform(strokeCtx);
+      strokeCtx.strokeStyle = color;
+      strokeCtx.lineWidth   = penSize;
       strokeCtx.lineCap     = 'round';
       strokeCtx.lineJoin    = 'round';
 
@@ -127,10 +141,9 @@ const SmartDrawing = (() => {
         const p0 = activeStroke[n - 3];
         const p1 = activeStroke[n - 2];
         const p2 = activeStroke[n - 1];
-        const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
         strokeCtx.beginPath();
         strokeCtx.moveTo(p0.x, p0.y);
-        strokeCtx.quadraticCurveTo(p1.x, p1.y, mid.x, mid.y);
+        strokeCtx.quadraticCurveTo(p1.x, p1.y, (p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
         strokeCtx.stroke();
       } else {
         strokeCtx.beginPath();
@@ -163,7 +176,7 @@ const SmartDrawing = (() => {
 
     activeStroke = [];
 
-    // Schedule debounced processing to allow for multi-stroke objects (=, +, ×, ÷, √, fractions, multi-stroke shapes)
+    // Schedule debounced processing for multi-stroke objects
     if (clusterTimer) clearTimeout(clusterTimer);
     clusterTimer = setTimeout(() => {
       flushClusterNow();
