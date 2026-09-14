@@ -50,10 +50,15 @@ const Canvas = (() => {
   let W = 0, H = 0;
   let currentDPR = 1; // devicePixelRatio — updated on resize
 
-  // Returns true if the current tool should block two-finger zoom/pan
+  // Returns true if the current tool or state should block two-finger zoom/pan
   function toolBlocksTwoFinger() {
     const tool = (typeof App !== 'undefined') ? App.currentTool : '';
-    return tool === 'pen' || tool === 'highlighter' || tool === 'eraser';
+    // Block during drawing, writing, smart-drawing, erasing, shapes, or active drag/resize operations
+    if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser' || tool === 'smart-draw' || tool === 'text') return true;
+    if (tool === 'shape' || tool === 'line' || tool === 'arrow' || tool === 'dashed') return true;
+    if (isDrawing || dragging || resizing || lineStart || rotatingStickyNote || draggingTableDivider) return true;
+    if (typeof Drawing !== 'undefined' && Drawing.isDrawingActive && Drawing.isDrawingActive()) return true;
+    return false;
   }
 
   let shapes    = [];
@@ -171,11 +176,8 @@ const Canvas = (() => {
           const factor = e.deltaY < 0 ? 1.12 : 0.89;
           const rect = zone.getBoundingClientRect();
           setZoom(zoomLevel * factor, e.clientX - rect.left, e.clientY - rect.top);
-        } else if (zoomLevel > 1.0) {
-          panX -= e.deltaX;
-          panY -= e.deltaY;
-          applyZoomTransform();
         }
+        // Do NOT automatically pan on unassisted wheel scroll to keep canvas viewport strictly stable
       }, { passive: false });
     }
 
@@ -1794,6 +1796,59 @@ const Canvas = (() => {
     setZoom(1.0);
   }
 
+  // Manual explicit Fit to Board / Auto Scale action ONLY
+  function fitToBoard() {
+    const zone = document.getElementById('canvas-zone');
+    const screenW = zone ? zone.offsetWidth : W;
+    const screenH = zone ? zone.offsetHeight : H;
+    if (!screenW || !screenH) return;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let hasContent = false;
+
+    shapes.forEach(s => {
+      const b = (typeof Shapes !== 'undefined' && Shapes.getBounds) ? Shapes.getBounds(s) : { x: s.x, y: s.y, w: s.w || 100, h: s.h || 100 };
+      if (b) {
+        hasContent = true;
+        if (b.x < minX) minX = b.x;
+        if (b.y < minY) minY = b.y;
+        if (b.x + b.w > maxX) maxX = b.x + b.w;
+        if (b.y + b.h > maxY) maxY = b.y + b.h;
+      }
+    });
+
+    strokes.forEach(s => {
+      if (!s._bbox) computeStrokeBounds(s);
+      if (s._bbox) {
+        hasContent = true;
+        if (s._bbox.minX < minX) minX = s._bbox.minX;
+        if (s._bbox.minY < minY) minY = s._bbox.minY;
+        if (s._bbox.maxX > maxX) maxX = s._bbox.maxX;
+        if (s._bbox.maxY > maxY) maxY = s._bbox.maxY;
+      }
+    });
+
+    if (!hasContent || minX === Infinity) {
+      resetZoom();
+      return;
+    }
+
+    const pad = 60;
+    const contentW = Math.max(100, maxX - minX + pad * 2);
+    const contentH = Math.max(100, maxY - minY + pad * 2);
+    const scaleX = screenW / contentW;
+    const scaleY = screenH / contentH;
+    const targetZoom = Math.max(0.33, Math.min(2.0, Math.min(scaleX, scaleY)));
+
+    const contentCenterX = (minX + maxX) / 2;
+    const contentCenterY = (minY + maxY) / 2;
+
+    panX = (screenW / 2) - contentCenterX * targetZoom;
+    panY = (screenH / 2) - contentCenterY * targetZoom;
+    zoomLevel = targetZoom;
+    applyZoomTransform();
+  }
+
   function getZoom() {
     return zoomLevel;
   }
@@ -2963,7 +3018,7 @@ const Canvas = (() => {
     showToolbarForTextTool, getSelected: () => selected,
     getBoardColorId: () => currentBoardColor.id, getBoardColor: () => currentBoardColor,
     getBoardBackgrounds: () => BOARD_BACKGROUNDS,
-    zoomIn, zoomOut, resetZoom, setZoom, getZoom,
+    zoomIn, zoomOut, resetZoom, fitToBoard, setZoom, getZoom,
     handleTwoFingerTouchStart, handleTwoFingerTouchMove, handleTwoFingerTouchEnd,
     getExportBounds: () => getLogicalBoardBounds()
   };

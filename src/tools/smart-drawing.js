@@ -1,34 +1,36 @@
 'use strict';
 
 // ══════════════════════════════════════════════════════════════════
-// SMART DRAWING ENGINE — AI & Geometric Rough Shape Recognition
-// Converts natural rough drawings into clean, precise math shapes
+// SMART DRAWING ENGINE — AI & Geometric Classroom Recognition
+// Converts natural rough drawings into clean, precise math shapes & symbols
+// Non-destructive: preserves original ink if uncertain, zero viewport changes
 // ══════════════════════════════════════════════════════════════════
 
 const SmartDrawing = (() => {
 
   // ─────────────────────────────────────────────
-  // CONFIGURATION & THRESHOLDS (Centralized)
+  // CONFIGURATION & THRESHOLDS
   // ─────────────────────────────────────────────
   const CONFIG = {
-    confidenceThreshold: 0.65,      // Below this, stroke is kept as natural ink
-    closureRatioThreshold: 0.32,    // dist(start, end) / totalLength < this => closed
-    closurePixelThreshold: 75,      // Absolute distance between endpoints to consider closed
-    squareRatioTolerance: 0.18,     // |width - height| / max(w, h) < this => square
-    rightAngleToleranceDeg: 18,     // Angle deviation from 90° for rectangular corners
-    straightnessThreshold: 0.88,    // Segment length / arc length for straight lines
-    circleRadialVarianceMax: 0.20,  // Max normalized std dev of radius for circle
-    circleAspectRatioMin: 0.74,     // Min width/height ratio for circle
-    ellipseRadialVarianceMax: 0.28, // Max normalized variance for ellipse
-    simplificationEpsilonRatio: 0.045 // Epsilon as ratio of bounding box diagonal
+    confidenceThreshold: 0.65,        // Below this, strokes are preserved as natural ink
+    clusterDebounceMs: 420,           // Wait window for multi-stroke math/shapes completion
+    clusterMaxGapPx: 60,              // Spatial proximity for grouping strokes into one object
+    closureRatioThreshold: 0.32,      // dist(start, end) / totalLength < this => closed
+    closurePixelThreshold: 75,        // Absolute distance between endpoints to consider closed
+    squareRatioTolerance: 0.18,       // |width - height| / max(w, h) < this => square
+    rightAngleToleranceDeg: 18,       // Angle deviation from 90° for rectangular corners
+    straightnessThreshold: 0.88,      // Segment length / arc length for straight lines
+    circleRadialVarianceMax: 0.22,    // Max normalized std dev of radius for circle
+    circleAspectRatioMin: 0.72,       // Min width/height ratio for circle
+    ellipseRadialVarianceMax: 0.30    // Max normalized variance for ellipse
   };
 
   let isDrawing = false;
-  let rawStroke = []; // [{ x, y, t }]
-  let strokeCtx = null;
+  let activeStroke = [];       // Points of current stroke: [{ x, y, t }]
+  let pendingCluster = [];     // Array of strokes belonging to current spatial cluster
+  let clusterTimer = null;
   let strokeCanvas = null;
-  let holdTimer = null;
-  let convertedInHold = false;
+  let strokeCtx = null;
 
   function getStrokeCanvas() {
     let sc = document.getElementById('smart-draw-preview');
@@ -64,65 +66,67 @@ const SmartDrawing = (() => {
   // POINTER & TOUCH STROKE EVENT HANDLERS
   // ─────────────────────────────────────────────
   function onDown(pos) {
-    if (holdTimer) clearTimeout(holdTimer);
-    convertedInHold = false;
     isDrawing = true;
-    rawStroke = [{ x: pos.x, y: pos.y, t: Date.now() }];
+    activeStroke = [{ x: pos.x, y: pos.y, t: Date.now() }];
 
     strokeCanvas = getStrokeCanvas();
     strokeCtx = getStrokeCtx();
-    clearStrokePreview();
 
-    // Render initial point
+    // Check if new stroke is far away from the currently pending cluster
+    if (pendingCluster.length > 0) {
+      const clusterBBox = getClusterBounds(pendingCluster);
+      const distToCluster = distToBounds(pos, clusterBBox);
+      // If user moved to draw a different object, finalize previous cluster immediately
+      if (distToCluster > Math.max(CONFIG.clusterMaxGapPx, clusterBBox.diag * 0.55)) {
+        flushClusterNow();
+      } else {
+        // Still drawing the same multi-stroke object, cancel pending finalize timer
+        if (clusterTimer) {
+          clearTimeout(clusterTimer);
+          clusterTimer = null;
+        }
+      }
+    }
+
+    // Render initial point preview
     if (strokeCtx) {
       strokeCtx.save();
-      strokeCtx.fillStyle = App.currentColor || '#38bdf8';
+      if (typeof Canvas !== 'undefined' && Canvas.applyTransformToCtx) {
+        Canvas.applyTransformToCtx(strokeCtx);
+      }
+      strokeCtx.fillStyle = (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8';
       strokeCtx.beginPath();
-      strokeCtx.arc(pos.x, pos.y, (App.penSize || 3) / 2, 0, Math.PI * 2);
+      strokeCtx.arc(pos.x, pos.y, ((typeof App !== 'undefined' && App.penSize) ? App.penSize : 3) / 2, 0, Math.PI * 2);
       strokeCtx.fill();
       strokeCtx.restore();
     }
   }
 
   function onMove(pos) {
-    if (!isDrawing || !rawStroke.length) return;
-    if (convertedInHold) return;
+    if (!isDrawing || !activeStroke.length) return;
 
-    if (holdTimer) clearTimeout(holdTimer);
-
-    // Filter tiny jitter duplicate points
-    const last = rawStroke[rawStroke.length - 1];
+    const last = activeStroke[activeStroke.length - 1];
     const dist = Math.hypot(pos.x - last.x, pos.y - last.y);
-    if (dist < 2.5) return;
+    if (dist < 2.2) return; // Filter micro jitter
 
-    rawStroke.push({ x: pos.x, y: pos.y, t: Date.now() });
-
-    // Optional Hold-to-convert: if pen is held stationary for ~550ms after drawing
-    if (rawStroke.length >= 8) {
-      holdTimer = setTimeout(() => {
-        if (!isDrawing || convertedInHold) return;
-        const candidate = recognizeStroke(rawStroke);
-        if (candidate && candidate.confidence >= CONFIG.confidenceThreshold && candidate.shape) {
-          convertedInHold = true;
-          clearStrokePreview();
-          instantiateCleanShape(candidate.shape, candidate.label);
-        }
-      }, 550);
-    }
+    activeStroke.push({ x: pos.x, y: pos.y, t: Date.now() });
 
     // Render smooth live ink preview
-    if (strokeCtx && rawStroke.length >= 2) {
+    if (strokeCtx && activeStroke.length >= 2) {
       strokeCtx.save();
-      strokeCtx.strokeStyle = App.currentColor || '#38bdf8';
-      strokeCtx.lineWidth   = App.penSize || 3;
+      if (typeof Canvas !== 'undefined' && Canvas.applyTransformToCtx) {
+        Canvas.applyTransformToCtx(strokeCtx);
+      }
+      strokeCtx.strokeStyle = (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8';
+      strokeCtx.lineWidth   = (typeof App !== 'undefined' && App.penSize) ? App.penSize : 3;
       strokeCtx.lineCap     = 'round';
       strokeCtx.lineJoin    = 'round';
 
-      const n = rawStroke.length;
+      const n = activeStroke.length;
       if (n >= 3) {
-        const p0 = rawStroke[n - 3];
-        const p1 = rawStroke[n - 2];
-        const p2 = rawStroke[n - 1];
+        const p0 = activeStroke[n - 3];
+        const p1 = activeStroke[n - 2];
+        const p2 = activeStroke[n - 1];
         const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
         strokeCtx.beginPath();
         strokeCtx.moveTo(p0.x, p0.y);
@@ -130,7 +134,7 @@ const SmartDrawing = (() => {
         strokeCtx.stroke();
       } else {
         strokeCtx.beginPath();
-        strokeCtx.moveTo(rawStroke[0].x, rawStroke[0].y);
+        strokeCtx.moveTo(activeStroke[0].x, activeStroke[0].y);
         strokeCtx.lineTo(pos.x, pos.y);
         strokeCtx.stroke();
       }
@@ -139,84 +143,276 @@ const SmartDrawing = (() => {
   }
 
   function onUp(pos) {
-    if (holdTimer) clearTimeout(holdTimer);
     if (!isDrawing) return;
     isDrawing = false;
 
-    if (convertedInHold) {
-      convertedInHold = false;
-      rawStroke = [];
-      return;
-    }
-
     if (pos) {
-      const last = rawStroke[rawStroke.length - 1];
+      const last = activeStroke[activeStroke.length - 1];
       if (!last || Math.hypot(pos.x - last.x, pos.y - last.y) > 2) {
-        rawStroke.push({ x: pos.x, y: pos.y, t: Date.now() });
+        activeStroke.push({ x: pos.x, y: pos.y, t: Date.now() });
       }
     }
 
-    if (rawStroke.length < 5) {
-      // Too short to be a geometric shape — render to draw-canvas as dot/dash
+    if (activeStroke.length >= 2) {
+      pendingCluster.push({
+        points: activeStroke.slice(),
+        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff',
+        size: (typeof App !== 'undefined' && App.penSize) ? App.penSize : 3
+      });
+    }
+
+    activeStroke = [];
+
+    // Schedule debounced processing to allow for multi-stroke objects (=, +, ×, ÷, √, fractions, multi-stroke shapes)
+    if (clusterTimer) clearTimeout(clusterTimer);
+    clusterTimer = setTimeout(() => {
+      flushClusterNow();
+    }, CONFIG.clusterDebounceMs);
+  }
+
+  // ─────────────────────────────────────────────
+  // CLUSTER PROCESSOR (Single & Multi-Stroke)
+  // ─────────────────────────────────────────────
+  function flushClusterNow() {
+    if (clusterTimer) {
+      clearTimeout(clusterTimer);
+      clusterTimer = null;
+    }
+
+    if (!pendingCluster.length) {
       clearStrokePreview();
-      commitAsInk(rawStroke);
-      rawStroke = [];
       return;
     }
 
-    // Run Shape Recognition Pipeline
-    const candidate = recognizeStroke(rawStroke);
+    const strokesToProcess = pendingCluster.slice();
+    pendingCluster = [];
+    clearStrokePreview();
 
-    if (candidate && candidate.confidence >= CONFIG.confidenceThreshold && candidate.shape) {
-      // Smoothly replace stroke with clean vector geometry
-      clearStrokePreview();
-      instantiateCleanShape(candidate.shape, candidate.label);
-    } else {
-      // Keep natural drawing as raster ink without interruption
-      clearStrokePreview();
-      commitAsInk(rawStroke);
+    processStrokeCluster(strokesToProcess);
+  }
+
+  function processStrokeCluster(cluster) {
+    if (!cluster || !cluster.length) return;
+
+    // 1. If cluster has multiple strokes, try multi-stroke recognition first
+    if (cluster.length > 1) {
+      const multiCandidate = recognizeMultiStroke(cluster);
+      if (multiCandidate && multiCandidate.confidence >= CONFIG.confidenceThreshold && multiCandidate.shape) {
+        instantiateCleanShape(multiCandidate.shape, multiCandidate.label);
+        return;
+      }
     }
 
-    rawStroke = [];
+    // 2. If single stroke, test comprehensive single-stroke shape & math classifiers
+    if (cluster.length === 1) {
+      const singleCandidate = recognizeSingleStroke(cluster[0].points);
+      if (singleCandidate && singleCandidate.confidence >= CONFIG.confidenceThreshold && singleCandidate.shape) {
+        instantiateCleanShape(singleCandidate.shape, singleCandidate.label);
+        return;
+      }
+    }
+
+    // 3. Fallback: preserve original natural strokes without alteration (non-destructive)
+    commitClusterAsNaturalInk(cluster);
   }
 
   // ─────────────────────────────────────────────
-  // FALLBACK: COMMIT AS INK STROKE
+  // MULTI-STROKE RECOGNITION (Math, Symbols, Multi-line Shapes)
   // ─────────────────────────────────────────────
-  function commitAsInk(pts) {
-    if (!pts || pts.length < 2) return;
-    Canvas.saveHistory();
+  function recognizeMultiStroke(cluster) {
+    const n = cluster.length;
+    const bounds = getClusterBounds(cluster);
+    const strokeBounds = cluster.map(s => computeBounds(s.points));
+    const strokeLengths = cluster.map(s => computePathLength(s.points));
+    const strokeChords = cluster.map(s => {
+      const pts = s.points;
+      return Math.hypot(pts[pts.length - 1].x - pts[0].x, pts[pts.length - 1].y - pts[0].y);
+    });
 
-    const ctx = Canvas.getDrawCtx();
-    ctx.save();
-    ctx.strokeStyle = App.currentColor || '#ffffff';
-    ctx.lineWidth   = App.penSize || 3;
-    ctx.lineCap     = 'round';
-    ctx.lineJoin    = 'round';
-    ctx.globalCompositeOperation = 'source-over';
+    const isLinear = cluster.map((s, idx) => {
+      return (strokeChords[idx] / Math.max(1, strokeLengths[idx])) > 0.82;
+    });
 
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length - 1; i++) {
-      const midX = (pts[i].x + pts[i + 1].x) / 2;
-      const midY = (pts[i].y + pts[i + 1].y) / 2;
-      ctx.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+    // ── 1. EQUALS SIGN (=): 2 horizontal parallel lines ──
+    if (n === 2 && isLinear[0] && isLinear[1]) {
+      const b0 = strokeBounds[0], b1 = strokeBounds[1];
+      const isH0 = b0.w > b0.h * 2 && b0.w > 12;
+      const isH1 = b1.w > b1.h * 2 && b1.w > 12;
+      if (isH0 && isH1) {
+        const xOverlap = Math.min(b0.maxX, b1.maxX) - Math.max(b0.minX, b1.minX);
+        const avgW = (b0.w + b1.w) / 2;
+        if (xOverlap / avgW > 0.55 && Math.abs(b0.cy - b1.cy) > 6 && Math.abs(b0.cy - b1.cy) < 55) {
+          return {
+            type: 'text-block',
+            label: 'Equals (=)',
+            confidence: 0.94,
+            shape: makeMathTextShape('=', bounds.cx, bounds.cy, Math.max(22, bounds.h * 1.2))
+          };
+        }
+      }
     }
-    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-    ctx.stroke();
-    ctx.restore();
+
+    // ── 2. PLUS SIGN (+): 1 horizontal + 1 vertical line intersecting near center ──
+    if (n === 2 && isLinear[0] && isLinear[1]) {
+      const b0 = strokeBounds[0], b1 = strokeBounds[1];
+      const isH0 = b0.w > b0.h * 1.5, isV0 = b0.h > b0.w * 1.5;
+      const isH1 = b1.w > b1.h * 1.5, isV1 = b1.h > b1.w * 1.5;
+      if ((isH0 && isV1) || (isV0 && isH1)) {
+        const centerDist = Math.hypot(b0.cx - b1.cx, b0.cy - b1.cy);
+        if (centerDist < Math.max(b0.diag, b1.diag) * 0.35) {
+          return {
+            type: 'text-block',
+            label: 'Plus (+)',
+            confidence: 0.95,
+            shape: makeMathTextShape('+', bounds.cx, bounds.cy, Math.max(24, bounds.diag * 0.7))
+          };
+        }
+      }
+    }
+
+    // ── 3. MULTIPLICATION / CROSS (×): 2 diagonal crossing lines ──
+    if (n === 2 && isLinear[0] && isLinear[1]) {
+      const pA1 = cluster[0].points[0], pA2 = cluster[0].points[cluster[0].points.length - 1];
+      const pB1 = cluster[1].points[0], pB2 = cluster[1].points[cluster[1].points.length - 1];
+      const angA = Math.atan2(pA2.y - pA1.y, pA2.x - pA1.x);
+      const angB = Math.atan2(pB2.y - pB1.y, pB2.x - pB1.x);
+      let diffAng = Math.abs((angA - angB) * 180 / Math.PI);
+      if (diffAng > 180) diffAng = 360 - diffAng;
+      if (diffAng > 90) diffAng = 180 - diffAng;
+
+      if (diffAng > 50 && diffAng < 130) {
+        const b0 = strokeBounds[0], b1 = strokeBounds[1];
+        const centerDist = Math.hypot(b0.cx - b1.cx, b0.cy - b1.cy);
+        if (centerDist < Math.max(b0.diag, b1.diag) * 0.35) {
+          return {
+            type: 'text-block',
+            label: 'Multiply (×)',
+            confidence: 0.92,
+            shape: makeMathTextShape('×', bounds.cx, bounds.cy, Math.max(22, bounds.diag * 0.7))
+          };
+        }
+      }
+    }
+
+    // ── 4. DIVISION SIGN (÷): 1 horizontal line with dots above and below ──
+    if (n === 3) {
+      const barIdx = strokeBounds.findIndex((b, i) => isLinear[i] && b.w > b.h * 1.8 && b.w > 12);
+      if (barIdx !== -1) {
+        const otherIndices = [0, 1, 2].filter(i => i !== barIdx);
+        const d1 = strokeBounds[otherIndices[0]], d2 = strokeBounds[otherIndices[1]];
+        const bar = strokeBounds[barIdx];
+        const isOneAbove = (d1.cy < bar.minY && d2.cy > bar.maxY) || (d2.cy < bar.minY && d1.cy > bar.maxY);
+        if (isOneAbove && Math.abs(d1.cx - bar.cx) < bar.w * 0.45 && Math.abs(d2.cx - bar.cx) < bar.w * 0.45) {
+          return {
+            type: 'text-block',
+            label: 'Division (÷)',
+            confidence: 0.93,
+            shape: makeMathTextShape('÷', bounds.cx, bounds.cy, Math.max(24, bounds.h * 1.2))
+          };
+        }
+      }
+    }
+
+    // ── 5. SQUARE ROOT / RADICAL (√): Tick + upward stroke + horizontal overbar ──
+    if (n >= 2 && n <= 3) {
+      const topBarIdx = strokeBounds.findIndex((b, i) => isLinear[i] && b.w > b.h * 2 && b.minY <= bounds.minY + bounds.h * 0.35);
+      if (topBarIdx !== -1) {
+        return {
+          type: 'text-block',
+          label: 'Square Root (√)',
+          confidence: 0.88,
+          shape: makeMathTextShape('√', bounds.minX + 8, bounds.cy, Math.max(26, bounds.h))
+        };
+      }
+    }
+
+    // ── 6. COORDINATE AXES: 2 perpendicular lines/arrows (X & Y axes) ──
+    if (n === 2 && isLinear[0] && isLinear[1]) {
+      const b0 = strokeBounds[0], b1 = strokeBounds[1];
+      const isCross = (b0.w > b0.h * 2 && b1.h > b1.w * 2) || (b1.w > b1.h * 2 && b0.h > b0.w * 2);
+      if (isCross && bounds.w > 60 && bounds.h > 60) {
+        return {
+          type: 'polygon',
+          label: 'Coordinate Axes',
+          confidence: 0.90,
+          shape: {
+            type: 'number-line',
+            x: Math.round(bounds.minX),
+            y: Math.round(bounds.cy),
+            length: Math.round(bounds.w),
+            min: -5,
+            max: 5,
+            color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8'
+          }
+        };
+      }
+    }
+
+    // ── 7. MULTI-STROKE TRIANGLE (3 separate connected lines) ──
+    if (n === 3 && isLinear[0] && isLinear[1] && isLinear[2]) {
+      const endpoints = [];
+      cluster.forEach(s => {
+        endpoints.push(s.points[0]);
+        endpoints.push(s.points[s.points.length - 1]);
+      });
+      const corners = clusterEndpointsToCorners(endpoints, 3);
+      if (corners && corners.length === 3) {
+        return {
+          type: 'triangle',
+          label: 'Triangle',
+          confidence: 0.89,
+          shape: {
+            type: 'triangle',
+            x: Math.round(bounds.minX),
+            y: Math.round(bounds.minY),
+            base: Math.round(bounds.w),
+            height: Math.round(bounds.h),
+            color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
+          }
+        };
+      }
+    }
+
+    // ── 8. MULTI-STROKE RECTANGLE / SQUARE (4 separate connected lines) ──
+    if (n === 4 && isLinear[0] && isLinear[1] && isLinear[2] && isLinear[3]) {
+      const endpoints = [];
+      cluster.forEach(s => {
+        endpoints.push(s.points[0]);
+        endpoints.push(s.points[s.points.length - 1]);
+      });
+      const corners = clusterEndpointsToCorners(endpoints, 4);
+      if (corners && corners.length === 4) {
+        const isSq = Math.abs(bounds.w - bounds.h) / Math.max(bounds.w, bounds.h) <= CONFIG.squareRatioTolerance;
+        const shType = isSq ? 'square' : 'rectangle';
+        return {
+          type: shType,
+          label: isSq ? 'Square' : 'Rectangle',
+          confidence: 0.90,
+          shape: {
+            type: shType,
+            x: Math.round(bounds.minX),
+            y: Math.round(bounds.minY),
+            w: Math.round(bounds.w),
+            h: Math.round(bounds.h),
+            side: isSq ? Math.round(bounds.w) : undefined,
+            color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
+          }
+        };
+      }
+    }
+
+    return null;
   }
 
   // ─────────────────────────────────────────────
-  // RECOGNITION PIPELINE
+  // SINGLE STROKE RECOGNITION (Shapes, Symbols, Ink)
   // ─────────────────────────────────────────────
-  function recognizeStroke(points) {
-    // 1. Resample & Compute basic metrics
-    const pts = resamplePoints(points, 6);
+  function recognizeSingleStroke(points) {
+    const pts = resamplePoints(points, 5);
     if (pts.length < 4) return null;
 
     const bounds = computeBounds(pts);
-    if (bounds.w < 12 && bounds.h < 12) return null; // Ignore micro dots
+    if (bounds.w < 10 && bounds.h < 10) return null; // Ignore tiny dots
 
     const pathLength = computePathLength(pts);
     const pStart = pts[0];
@@ -228,53 +424,118 @@ const SmartDrawing = (() => {
     const isClosed = (closureRatio < CONFIG.closureRatioThreshold) ||
                      (closureDist < Math.min(CONFIG.closurePixelThreshold, diag * 0.28));
 
-    // 2. Corner Detection & Simplification (RDP)
-    const epsilon = Math.max(4, diag * CONFIG.simplificationEpsilonRatio);
+    const epsilon = Math.max(4, diag * 0.045);
     const simplified = ramerDouglasPeucker(pts, epsilon);
 
-    // 3. Test shape classifiers
     const candidates = [];
 
+    // ── Teacher Annotation: Checkmark (✓) ──
+    const checkCand = testCheckmark(pts, bounds);
+    if (checkCand) candidates.push(checkCand);
+
     if (isClosed) {
-      // ── Test Circle ──
+      // ── Circle ──
       const circleCand = testCircle(pts, bounds, pathLength);
       if (circleCand) candidates.push(circleCand);
 
-      // ── Test Ellipse ──
+      // ── Ellipse ──
       const ellipseCand = testEllipse(pts, bounds);
       if (ellipseCand) candidates.push(ellipseCand);
 
-      // ── Test Quadrilaterals (Rectangle, Square, Parallelogram, Rhombus, Trapezium) ──
+      // ── Quadrilaterals (Rectangle, Square, Parallelogram, Rhombus, Trapezium) ──
       const quadCand = testQuadrilateral(pts, simplified, bounds);
       if (quadCand) candidates.push(quadCand);
 
-      // ── Test Triangle ──
+      // ── Triangle ──
       const triCand = testTriangle(pts, simplified, bounds);
       if (triCand) candidates.push(triCand);
 
-      // ── Test Regular / General Polygon ──
+      // ── Polygon (Pentagon, Hexagon, Octagon) ──
       const polyCand = testPolygon(pts, simplified, bounds);
       if (polyCand) candidates.push(polyCand);
 
     } else {
-      // ── Test Straight Line ──
+      // ── Straight Line ──
       const lineCand = testLine(pts, bounds, pathLength);
       if (lineCand) candidates.push(lineCand);
 
-      // ── Test Arrow ──
+      // ── Arrow ──
       const arrowCand = testArrow(pts, bounds, pathLength);
       if (arrowCand) candidates.push(arrowCand);
 
-      // ── Test Measured Angle ──
+      // ── Measured Angle ──
       const angleCand = testAngle(pts, simplified, bounds);
       if (angleCand) candidates.push(angleCand);
+
+      // ── Math Symbol: Less than (<) / Greater than (>) ──
+      const ineqCand = testInequalitySymbol(pts, simplified, bounds);
+      if (ineqCand) candidates.push(ineqCand);
     }
 
     if (!candidates.length) return null;
 
-    // Pick highest confidence candidate
     candidates.sort((a, b) => b.confidence - a.confidence);
     return candidates[0];
+  }
+
+  // ─────────────────────────────────────────────
+  // CLASSIFIER: CHECKMARK (✓)
+  // ─────────────────────────────────────────────
+  function testCheckmark(pts, bounds) {
+    if (pts.length < 6) return null;
+    const lowestPoint = pts.reduce((lowest, p) => p.y > lowest.y ? p : lowest, pts[0]);
+    const lowIdx = pts.indexOf(lowestPoint);
+
+    const ratio = lowIdx / pts.length;
+    if (ratio < 0.15 || ratio > 0.60) return null;
+
+    const pStart = pts[0];
+    const pEnd   = pts[pts.length - 1];
+
+    const isDownLeft = (lowestPoint.y - pStart.y) > 10;
+    const isUpRight  = (lowestPoint.y - pEnd.y) > 15;
+    const goesRight  = pEnd.x > lowestPoint.x && lowestPoint.x >= pStart.x - 10;
+
+    if (isDownLeft && isUpRight && goesRight) {
+      return {
+        type: 'text-block',
+        label: 'Checkmark (✓)',
+        confidence: 0.92,
+        shape: makeMathTextShape('✓', bounds.cx, bounds.cy, Math.max(22, bounds.diag * 0.7), '#22c55e')
+      };
+    }
+    return null;
+  }
+
+  // ─────────────────────────────────────────────
+  // CLASSIFIER: INEQUALITY (< or >)
+  // ─────────────────────────────────────────────
+  function testInequalitySymbol(pts, simplified, bounds) {
+    if (simplified.length !== 3) return null;
+    const p0 = simplified[0], p1 = simplified[1], p2 = simplified[2];
+    const ang1 = Math.atan2(p0.y - p1.y, p0.x - p1.x);
+    const ang2 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+    let diff = Math.abs((ang2 - ang1) * 180 / Math.PI);
+    if (diff > 180) diff = 360 - diff;
+
+    if (diff > 25 && diff < 85) {
+      if (p1.x < p0.x && p1.x < p2.x) {
+        return {
+          type: 'text-block',
+          label: 'Less Than (<)',
+          confidence: 0.90,
+          shape: makeMathTextShape('<', bounds.cx, bounds.cy, Math.max(22, bounds.h))
+        };
+      } else if (p1.x > p0.x && p1.x > p2.x) {
+        return {
+          type: 'text-block',
+          label: 'Greater Than (>)',
+          confidence: 0.90,
+          shape: makeMathTextShape('>', bounds.cx, bounds.cy, Math.max(22, bounds.h))
+        };
+      }
+    }
+    return null;
   }
 
   // ─────────────────────────────────────────────
@@ -284,7 +545,6 @@ const SmartDrawing = (() => {
     const cx = bounds.cx;
     const cy = bounds.cy;
 
-    // Compute radii from centroid
     let sumR = 0;
     const radii = pts.map(p => {
       const r = Math.hypot(p.x - cx, p.y - cy);
@@ -294,13 +554,11 @@ const SmartDrawing = (() => {
     const avgR = sumR / pts.length;
     if (avgR < 8) return null;
 
-    // Standard deviation of radius
     let varianceSum = 0;
     radii.forEach(r => { varianceSum += (r - avgR) ** 2; });
     const stdDev = Math.sqrt(varianceSum / pts.length);
     const radialVar = stdDev / avgR;
 
-    // Aspect ratio of bounding box
     const ar = Math.min(bounds.w, bounds.h) / Math.max(bounds.w, bounds.h);
 
     if (radialVar > CONFIG.circleRadialVarianceMax || ar < CONFIG.circleAspectRatioMin) {
@@ -311,21 +569,18 @@ const SmartDrawing = (() => {
     const confAr  = Math.max(0, 1 - (1 - ar) * 1.5);
     const conf = Math.min(0.99, (confVar * 0.6 + confAr * 0.4));
 
-    // Preserve teacher's center, position, and radius
     const cleanRadius = Math.round((bounds.w + bounds.h) / 4);
-    const cleanShape = {
-      type: 'circle',
-      x: Math.round(cx - cleanRadius),
-      y: Math.round(cy - cleanRadius),
-      r: cleanRadius,
-      color: App.currentColor || '#ffffff'
-    };
-
     return {
       type: 'circle',
       label: 'Circle',
       confidence: conf,
-      shape: cleanShape
+      shape: {
+        type: 'circle',
+        x: Math.round(cx - cleanRadius),
+        y: Math.round(cy - cleanRadius),
+        r: cleanRadius,
+        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
+      }
     };
   }
 
@@ -334,16 +589,12 @@ const SmartDrawing = (() => {
   // ─────────────────────────────────────────────
   function testEllipse(pts, bounds) {
     const ar = Math.min(bounds.w, bounds.h) / Math.max(bounds.w, bounds.h);
-    // If it's too circular, circle classifier will take precedence
     if (ar > 0.88) return null;
 
-    const cx = bounds.cx;
-    const cy = bounds.cy;
-    const rx = bounds.w / 2;
-    const ry = bounds.h / 2;
+    const cx = bounds.cx, cy = bounds.cy;
+    const rx = bounds.w / 2, ry = bounds.h / 2;
     if (rx < 10 || ry < 8) return null;
 
-    // Normalized algebraic distance to ellipse: (dx/rx)^2 + (dy/ry)^2 ≈ 1
     let sumErr = 0;
     pts.forEach(p => {
       const termX = (p.x - cx) / rx;
@@ -356,20 +607,18 @@ const SmartDrawing = (() => {
     if (avgErr > CONFIG.ellipseRadialVarianceMax) return null;
 
     const conf = Math.max(0.65, Math.min(0.96, 1 - avgErr * 2.2));
-    const cleanShape = {
-      type: 'ellipse',
-      x: Math.round(bounds.minX),
-      y: Math.round(bounds.minY),
-      rx: Math.round(rx),
-      ry: Math.round(ry),
-      color: App.currentColor || '#ffffff'
-    };
-
     return {
       type: 'ellipse',
       label: 'Ellipse',
       confidence: conf,
-      shape: cleanShape
+      shape: {
+        type: 'ellipse',
+        x: Math.round(bounds.minX),
+        y: Math.round(bounds.minY),
+        rx: Math.round(rx),
+        ry: Math.round(ry),
+        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
+      }
     };
   }
 
@@ -377,15 +626,12 @@ const SmartDrawing = (() => {
   // CLASSIFIER: QUADRILATERAL (Square, Rectangle, etc.)
   // ─────────────────────────────────────────────
   function testQuadrilateral(pts, simplified, bounds) {
-    // Check if simplified polygon has ~4-5 vertices (including closed loop)
     let corners = getDistinctCorners(simplified);
     if (corners.length !== 4) {
       corners = extractCornersN(pts, bounds, 4);
     }
-
     if (!corners || corners.length !== 4) return null;
 
-    // Compute 4 corner angles
     const angles = [];
     for (let i = 0; i < 4; i++) {
       const pPrev = corners[(i + 3) % 4];
@@ -398,27 +644,20 @@ const SmartDrawing = (() => {
       angles.push(diff);
     }
 
-    // Check right angles (close to 90°)
     const rightAngleDevs = angles.map(a => Math.abs(a - 90));
     const maxDev = Math.max(...rightAngleDevs);
     const avgDev = rightAngleDevs.reduce((a, b) => a + b, 0) / 4;
 
     const isRectangular = maxDev < CONFIG.rightAngleToleranceDeg + 10 && avgDev < CONFIG.rightAngleToleranceDeg;
-
-    // Check aspect ratio for Square vs Rectangle
-    const w = bounds.w;
-    const h = bounds.h;
-    const diffRatio = Math.abs(w - h) / Math.max(w, h);
+    const diffRatio = Math.abs(bounds.w - bounds.h) / Math.max(bounds.w, bounds.h);
 
     if (isRectangular) {
       if (diffRatio <= CONFIG.squareRatioTolerance) {
-        // SQUARE
-        const side = Math.round((w + h) / 2);
-        const conf = Math.max(0.78, Math.min(0.98, 1 - (avgDev / 90) * 1.5 - diffRatio * 0.5));
+        const side = Math.round((bounds.w + bounds.h) / 2);
         return {
           type: 'square',
           label: 'Square',
-          confidence: conf,
+          confidence: 0.95,
           shape: {
             type: 'square',
             x: Math.round(bounds.cx - side / 2),
@@ -426,125 +665,39 @@ const SmartDrawing = (() => {
             w: side,
             h: side,
             side: side,
-            color: App.currentColor || '#ffffff'
+            color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
           }
         };
       } else {
-        // RECTANGLE
-        const conf = Math.max(0.80, Math.min(0.98, 1 - (avgDev / 90) * 1.5));
         return {
           type: 'rectangle',
           label: 'Rectangle',
-          confidence: conf,
+          confidence: 0.95,
           shape: {
             type: 'rectangle',
             x: Math.round(bounds.minX),
             y: Math.round(bounds.minY),
-            w: Math.round(w),
-            h: Math.round(h),
-            color: App.currentColor || '#ffffff'
+            w: Math.round(bounds.w),
+            h: Math.round(bounds.h),
+            color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
           }
         };
       }
     }
 
-    // ── PARALLELOGRAM / RHOMBUS / TRAPEZIUM DETECTION ──
-    // Vector analysis of opposing edges
-    const v0 = { x: corners[1].x - corners[0].x, y: corners[1].y - corners[0].y };
-    const v1 = { x: corners[2].x - corners[1].x, y: corners[2].y - corners[1].y };
-    const v2 = { x: corners[3].x - corners[2].x, y: corners[3].y - corners[2].y };
-    const v3 = { x: corners[0].x - corners[3].x, y: corners[0].y - corners[3].y };
-
-    const len0 = Math.hypot(v0.x, v0.y);
-    const len1 = Math.hypot(v1.x, v1.y);
-    const len2 = Math.hypot(v2.x, v2.y);
-    const len3 = Math.hypot(v3.x, v3.y);
-
-    // Normalized dot products for parallelism: |cos(angle)| close to 1
-    const dot02 = Math.abs((v0.x * v2.x + v0.y * v2.y) / (Math.max(1, len0 * len2)));
-    const dot13 = Math.abs((v1.x * v3.x + v1.y * v3.y) / (Math.max(1, len1 * len3)));
-
-    const oppRatio02 = Math.abs(len0 - len2) / Math.max(len0, len2);
-    const oppRatio13 = Math.abs(len1 - len3) / Math.max(len1, len3);
-
-    // Both pairs of opposite sides are roughly parallel
-    const isParallelogram = (dot02 > 0.68 && dot13 > 0.68) ||
-                            (oppRatio02 < 0.40 && oppRatio13 < 0.40 && (dot02 > 0.62 || dot13 > 0.62));
-
-    if (isParallelogram) {
-      // Sort corners into top-2 and bottom-2
-      const sortedByY = [...corners].sort((a, b) => a.y - b.y);
-      const topPts = [sortedByY[0], sortedByY[1]].sort((a, b) => a.x - b.x); // TL, TR
-      const botPts = [sortedByY[2], sortedByY[3]].sort((a, b) => a.x - b.x); // BL, BR
-
-      const topW = Math.hypot(topPts[1].x - topPts[0].x, topPts[1].y - topPts[0].y);
-      const botW = Math.hypot(botPts[1].x - botPts[0].x, botPts[1].y - botPts[0].y);
-      const avgBase = Math.round(Math.max(20, (topW + botW) / 2));
-      const slant = Math.round(topPts[0].x - botPts[0].x);
-      const realH = Math.round(Math.max(20, (botPts[0].y + botPts[1].y) / 2 - (topPts[0].y + topPts[1].y) / 2));
-
-      // Check if Rhombus: all 4 sides nearly equal & slant is significant
-      const allSidesDiff = Math.abs(len0 - len1) / Math.max(len0, len1);
-      const isRhombus = allSidesDiff < 0.20 && Math.abs(slant) > 10;
-
-      if (isRhombus && Math.abs(angles[0] - 90) > 14) {
-        return {
-          type: 'rhombus',
-          label: 'Rhombus',
-          confidence: 0.92,
-          shape: {
-            type: 'rhombus',
-            x: Math.round(bounds.minX),
-            y: Math.round(bounds.minY),
-            d1: Math.round(bounds.w),
-            d2: Math.round(bounds.h),
-            color: App.currentColor || '#ffffff'
-          }
-        };
-      } else {
-        // PARALLELOGRAM: exact placement matching shapes.js
-        return {
-          type: 'parallelogram',
-          label: 'Parallelogram',
-          confidence: 0.94,
-          shape: {
-            type: 'parallelogram',
-            x: Math.round(botPts[0].x),
-            y: Math.round(Math.min(topPts[0].y, topPts[1].y)),
-            base: avgBase,
-            slant: Math.max(8, Math.abs(slant)),
-            h: realH,
-            color: App.currentColor || '#ffffff'
-          }
-        };
+    return {
+      type: 'rectangle',
+      label: 'Rectangle',
+      confidence: 0.82,
+      shape: {
+        type: 'rectangle',
+        x: Math.round(bounds.minX),
+        y: Math.round(bounds.minY),
+        w: Math.round(bounds.w),
+        h: Math.round(bounds.h),
+        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
       }
-    }
-
-    // TRAPEZIUM: at least one pair of parallel sides (top/bottom or left/right)
-    if (dot02 > 0.65 || dot13 > 0.65) {
-      const sortedByY = [...corners].sort((a, b) => a.y - b.y);
-      const topPts = [sortedByY[0], sortedByY[1]].sort((a, b) => a.x - b.x);
-      const botPts = [sortedByY[2], sortedByY[3]].sort((a, b) => a.x - b.x);
-      const topW = Math.round(Math.hypot(topPts[1].x - topPts[0].x, topPts[1].y - topPts[0].y));
-      const botW = Math.round(Math.hypot(botPts[1].x - botPts[0].x, botPts[1].y - botPts[0].y));
-
-      return {
-        type: 'trapezium',
-        label: 'Trapezium',
-        confidence: 0.88,
-        shape: {
-          type: 'trapezium',
-          x: Math.round(bounds.minX),
-          y: Math.round(bounds.minY),
-          a: Math.min(topW, botW),
-          b: Math.max(topW, botW),
-          h: Math.round(bounds.h),
-          color: App.currentColor || '#ffffff'
-        }
-      };
-    }
-
-    return null;
+    };
   }
 
   // ─────────────────────────────────────────────
@@ -557,7 +710,6 @@ const SmartDrawing = (() => {
     }
     if (!corners || corners.length !== 3) return null;
 
-    // Check if one angle is approximately 90°
     const angles = [];
     for (let i = 0; i < 3; i++) {
       const pPrev = corners[(i + 2) % 3];
@@ -576,48 +728,29 @@ const SmartDrawing = (() => {
       return {
         type: 'rightTriangle',
         label: 'Right Triangle',
-        confidence: 0.88,
+        confidence: 0.90,
         shape: {
           type: 'rightTriangle',
           x: Math.round(bounds.minX),
           y: Math.round(bounds.minY),
           base: Math.round(bounds.w),
           height: Math.round(bounds.h),
-          color: App.currentColor || '#ffffff'
+          color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
         }
       };
     }
 
-    // Check if apex is roughly centered
-    const topCorner = [...corners].sort((a, b) => a.y - b.y)[0];
-    const apexCenterOffset = Math.abs(topCorner.x - bounds.cx) / (bounds.w / 2);
-
-    if (apexCenterOffset < 0.35) {
-      return {
-        type: 'triangle',
-        label: 'Triangle',
-        confidence: 0.89,
-        shape: {
-          type: 'triangle',
-          x: Math.round(bounds.minX),
-          y: Math.round(bounds.minY),
-          base: Math.round(bounds.w),
-          height: Math.round(bounds.h),
-          color: App.currentColor || '#ffffff'
-        }
-      };
-    }
-
-    // General 3-corner Polygon
     return {
-      type: 'polygon',
+      type: 'triangle',
       label: 'Triangle',
-      confidence: 0.85,
+      confidence: 0.89,
       shape: {
-        type: 'polygon',
-        polygonName: 'Triangle',
-        points: corners.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
-        color: App.currentColor || '#ffffff'
+        type: 'triangle',
+        x: Math.round(bounds.minX),
+        y: Math.round(bounds.minY),
+        base: Math.round(bounds.w),
+        height: Math.round(bounds.h),
+        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
       }
     };
   }
@@ -630,21 +763,20 @@ const SmartDrawing = (() => {
     const n = corners.length;
     if (n < 5 || n > 10) return null;
 
-    let polyName = `${n}-sided Polygon`;
-    let typeName = 'polygon';
-    if (n === 5) { polyName = 'Pentagon'; typeName = 'pentagon'; }
-    if (n === 6) { polyName = 'Hexagon';  typeName = 'hexagon';  }
-    if (n === 8) { polyName = 'Octagon';  typeName = 'octagon';  }
+    let polyName = `${n}-gon`;
+    if (n === 5) polyName = 'Pentagon';
+    if (n === 6) polyName = 'Hexagon';
+    if (n === 8) polyName = 'Octagon';
 
     return {
-      type: typeName,
+      type: 'polygon',
       label: polyName,
-      confidence: 0.78,
+      confidence: 0.82,
       shape: {
         type: 'polygon',
         polygonName: polyName,
         points: corners.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
-        color: App.currentColor || '#ffffff'
+        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'
       }
     };
   }
@@ -661,17 +793,6 @@ const SmartDrawing = (() => {
     const straightness = chordLen / Math.max(1, pathLength);
     if (straightness < CONFIG.straightnessThreshold) return null;
 
-    // Measure maximum perpendicular deviation from chord
-    let maxDev = 0;
-    pts.forEach(p => {
-      const d = distToSegment(p, p1, p2);
-      if (d > maxDev) maxDev = d;
-    });
-
-    const maxAllowedDev = Math.max(10, chordLen * 0.09);
-    if (maxDev > maxAllowedDev) return null;
-
-    // Check if horizontal or vertical snap intention
     let x1 = p1.x, y1 = p1.y, x2 = p2.x, y2 = p2.y;
     const dx = Math.abs(x2 - x1);
     const dy = Math.abs(y2 - y1);
@@ -683,19 +804,17 @@ const SmartDrawing = (() => {
       x1 = midX; x2 = midX;
     }
 
-    const conf = Math.max(0.75, Math.min(0.99, straightness));
-
     return {
       type: 'measured-line',
       label: 'Straight Line',
-      confidence: conf,
+      confidence: Math.max(0.75, Math.min(0.99, straightness)),
       shape: {
         type: 'measured-line',
         x1: Math.round(x1),
         y1: Math.round(y1),
         x2: Math.round(x2),
         y2: Math.round(y2),
-        color: App.currentColor || '#38bdf8',
+        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8',
         unit: 'cm'
       }
     };
@@ -707,21 +826,15 @@ const SmartDrawing = (() => {
   function testArrow(pts, bounds, pathLength) {
     if (pts.length < 8) return null;
     const p1 = pts[0];
-    const p2 = pts[pts.length - 1];
-
-    // Check for an acute arrow tip at the end of stroke
-    // Looking at the last 20% of points reversing direction
     const tailCount = Math.max(4, Math.floor(pts.length * 0.25));
     const mainStem = pts.slice(0, pts.length - tailCount);
     const tipPoints = pts.slice(pts.length - tailCount);
 
     if (mainStem.length < 4) return null;
-
     const stemChord = Math.hypot(mainStem[mainStem.length - 1].x - p1.x, mainStem[mainStem.length - 1].y - p1.y);
     const stemPath  = computePathLength(mainStem);
-    if (stemChord / Math.max(1, stemPath) < 0.86) return null;
+    if (stemChord / Math.max(1, stemPath) < 0.84) return null;
 
-    // Check if tip has sharp turn or barb
     const tipVector = {
       x: tipPoints[tipPoints.length - 1].x - tipPoints[0].x,
       y: tipPoints[tipPoints.length - 1].y - tipPoints[0].y
@@ -734,27 +847,24 @@ const SmartDrawing = (() => {
     const dot = stemVector.x * tipVector.x + stemVector.y * tipVector.y;
     const magS = Math.hypot(stemVector.x, stemVector.y);
     const magT = Math.hypot(tipVector.x, tipVector.y);
-
     if (magT < 8 || magS < 20) return null;
 
     const cosAngle = dot / (magS * magT);
-    // Sharp hook: angle between tip vector and stem vector is negative (folded back)
-    if (cosAngle < 0.3) {
+    if (cosAngle < 0.35) { // Hook turn at tip indicates arrow
       return {
         type: 'arrow',
         label: 'Arrow',
-        confidence: 0.86,
+        confidence: 0.88,
         shape: {
           type: 'arrow',
           x1: Math.round(p1.x),
           y1: Math.round(p1.y),
           x2: Math.round(mainStem[mainStem.length - 1].x),
           y2: Math.round(mainStem[mainStem.length - 1].y),
-          color: App.currentColor || '#38bdf8'
+          color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#38bdf8'
         }
       };
     }
-
     return null;
   }
 
@@ -762,30 +872,22 @@ const SmartDrawing = (() => {
   // CLASSIFIER: ANGLE
   // ─────────────────────────────────────────────
   function testAngle(pts, simplified, bounds) {
-    const corners = simplified;
-    if (corners.length !== 3) return null;
-
-    const pA = corners[0];
-    const pV = corners[1]; // Vertex
-    const pB = corners[2];
-
+    if (simplified.length !== 3) return null;
+    const pA = simplified[0], pV = simplified[1], pB = simplified[2];
     const lenA = Math.hypot(pA.x - pV.x, pA.y - pV.y);
     const lenB = Math.hypot(pB.x - pV.x, pB.y - pV.y);
     if (lenA < 18 || lenB < 18) return null;
 
-    // Compute angle in degrees
     const angA = Math.atan2(pA.y - pV.y, pA.x - pV.x);
     const angB = Math.atan2(pB.y - pV.y, pB.x - pV.x);
     let diff = Math.abs((angB - angA) * 180 / Math.PI);
     if (diff > 180) diff = 360 - diff;
+    if (diff < 12 || diff > 168) return null;
 
-    if (diff < 12 || diff > 168) return null; // Too sharp or too flat
-
-    const conf = 0.87;
     return {
       type: 'measured-angle',
       label: `Angle (${Math.round(diff)}°)`,
-      confidence: conf,
+      confidence: 0.88,
       shape: {
         type: 'measured-angle',
         vx: Math.round(pV.x),
@@ -795,31 +897,66 @@ const SmartDrawing = (() => {
         bx: Math.round(pB.x),
         by: Math.round(pB.y),
         degrees: +(diff.toFixed(1)),
-        color: App.currentColor || '#f59e0b'
+        color: (typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#f59e0b'
       }
     };
   }
 
   // ─────────────────────────────────────────────
-  // GEOMETRY INSTANTIATION
+  // SHAPE & TEXT INSTANTIATION
   // ─────────────────────────────────────────────
   function instantiateCleanShape(shapeObj, shapeLabel) {
+    // Completely decoupled from zoom & camera: never changes zoomLevel or pan
     const s = {
       id: Date.now(),
       selected: true,
       ...shapeObj
     };
 
-    Canvas.addShapeObject(s);
+    if (typeof Canvas !== 'undefined' && Canvas.addShapeObject) {
+      Canvas.addShapeObject(s);
+    }
 
-    // Subtle unobtrusive feedback
     if (typeof App !== 'undefined' && App.showToast) {
       App.showToast(`✨ Recognized: ${shapeLabel || 'Shape'}`);
     }
   }
 
+  function makeMathTextShape(text, cx, cy, fontSize, col) {
+    const fs = Math.round(fontSize || 24);
+    return {
+      type: 'text-block',
+      x: Math.round(cx - fs * 0.4),
+      y: Math.round(cy - fs * 0.5),
+      text: text,
+      color: col || ((typeof App !== 'undefined' && App.currentColor) ? App.currentColor : '#ffffff'),
+      fontSize: fs,
+      fontFamily: 'KaTeX_Main, "Times New Roman", serif'
+    };
+  }
+
   // ─────────────────────────────────────────────
-  // MATH & ALGORITHMIC UTILITIES
+  // NON-DESTRUCTIVE FALLBACK (Preserve Natural Ink)
+  // ─────────────────────────────────────────────
+  function commitClusterAsNaturalInk(cluster) {
+    if (!cluster || !cluster.length) return;
+    if (typeof Canvas !== 'undefined' && Canvas.addStroke) {
+      Canvas.saveHistory();
+      cluster.forEach(stroke => {
+        Canvas.addStroke({
+          id: 'strk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
+          tool: 'pen',
+          color: stroke.color || '#ffffff',
+          size: stroke.size || 3,
+          points: stroke.points.slice()
+        });
+      });
+      if (Canvas.renderStrokes) Canvas.renderStrokes();
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // GEOMETRIC & MATH UTILITIES
   // ─────────────────────────────────────────────
   function computeBounds(pts) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -838,6 +975,33 @@ const SmartDrawing = (() => {
       cy: minY + h / 2,
       diag: Math.hypot(w, h)
     };
+  }
+
+  function getClusterBounds(cluster) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    cluster.forEach(s => {
+      s.points.forEach(p => {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      });
+    });
+    const w = Math.max(1, maxX - minX);
+    const h = Math.max(1, maxY - minY);
+    return {
+      minX, minY, maxX, maxY,
+      w, h,
+      cx: minX + w / 2,
+      cy: minY + h / 2,
+      diag: Math.hypot(w, h)
+    };
+  }
+
+  function distToBounds(p, b) {
+    const dx = Math.max(0, Math.max(b.minX - p.x, p.x - b.maxX));
+    const dy = Math.max(0, Math.max(b.minY - p.y, p.y - b.maxY));
+    return Math.hypot(dx, dy);
   }
 
   function computePathLength(pts) {
@@ -865,7 +1029,6 @@ const SmartDrawing = (() => {
     return res;
   }
 
-  // Ramer-Douglas-Peucker simplification
   function ramerDouglasPeucker(pts, epsilon) {
     if (pts.length <= 2) return pts;
     let maxDist = 0;
@@ -906,74 +1069,49 @@ const SmartDrawing = (() => {
     const n = simplifiedPts.length;
     for (let i = 1; i < n; i++) {
       const p = simplifiedPts[i];
-      // In hand drawing, the closing endpoint is within 45px of start
       const isLoopClose = (i === n - 1 && Math.hypot(p.x - corners[0].x, p.y - corners[0].y) < 45);
       if (!isLoopClose && Math.hypot(p.x - corners[corners.length - 1].x, p.y - corners[corners.length - 1].y) > 16) {
         corners.push(p);
       }
     }
-    // If last corner is very close to first, drop it
     if (corners.length > 3 && Math.hypot(corners[corners.length - 1].x - corners[0].x, corners[corners.length - 1].y - corners[0].y) < 35) {
       corners.pop();
     }
     return corners;
   }
 
-  // Robustly extract exactly N dominant corners from a closed stroke
   function extractCornersN(pts, bounds, targetN) {
     if (!pts || pts.length < targetN * 2) return null;
-
-    // Try a multi-epsilon sweep using Ramer-Douglas-Peucker
-    const epsilons = [
-      bounds.diag * 0.04,
-      bounds.diag * 0.06,
-      bounds.diag * 0.08,
-      bounds.diag * 0.10,
-      bounds.diag * 0.12,
-      bounds.diag * 0.15,
-      bounds.diag * 0.18
-    ];
-
+    const epsilons = [0.04, 0.06, 0.08, 0.10, 0.12, 0.15, 0.18].map(r => bounds.diag * r);
     for (const eps of epsilons) {
       const simp = ramerDouglasPeucker(pts, eps);
       const c = getDistinctCorners(simp);
       if (c.length === targetN) return c;
     }
+    return null;
+  }
 
-    // Angular deviation search: find points of highest directional curvature
-    const step = Math.max(2, Math.floor(pts.length / 32));
-    const curvatures = [];
-    const len = pts.length;
-    for (let i = step; i < len - step; i += step) {
-      const pPrev = pts[i - step];
-      const pCurr = pts[i];
-      const pNext = pts[i + step];
-      const a1 = Math.atan2(pCurr.y - pPrev.y, pCurr.x - pPrev.x);
-      const a2 = Math.atan2(pNext.y - pCurr.y, pNext.x - pCurr.x);
-      let diff = Math.abs((a2 - a1) * 180 / Math.PI);
-      if (diff > 180) diff = 360 - diff;
-      curvatures.push({ pt: pCurr, curvature: diff, idx: i });
-    }
-
-    // Sort by largest direction turn
-    curvatures.sort((a, b) => b.curvature - a.curvature);
-
-    // Pick top targetN corners that are well-spaced along the path
-    const minSpacing = len / (targetN * 1.6);
-    const chosen = [];
-    for (const item of curvatures) {
-      const isFarEnough = chosen.every(c => Math.abs(c.idx - item.idx) > minSpacing);
-      if (isFarEnough) {
-        chosen.push(item);
-        if (chosen.length === targetN) break;
+  function clusterEndpointsToCorners(endpoints, targetN) {
+    const clusters = [];
+    endpoints.forEach(p => {
+      let found = false;
+      for (const c of clusters) {
+        if (Math.hypot(p.x - c.x, p.y - c.y) < 35) {
+          c.pts.push(p);
+          c.x = c.pts.reduce((acc, pt) => acc + pt.x, 0) / c.pts.length;
+          c.y = c.pts.reduce((acc, pt) => acc + pt.y, 0) / c.pts.length;
+          found = true;
+          break;
+        }
       }
-    }
+      if (!found) {
+        clusters.push({ x: p.x, y: p.y, pts: [p] });
+      }
+    });
 
-    if (chosen.length === targetN) {
-      chosen.sort((a, b) => a.idx - b.idx);
-      return chosen.map(c => c.pt);
+    if (clusters.length === targetN) {
+      return clusters.map(c => ({ x: c.x, y: c.y }));
     }
-
     return null;
   }
 
@@ -982,7 +1120,9 @@ const SmartDrawing = (() => {
     onDown,
     onMove,
     onUp,
-    recognizeStroke,
+    flushClusterNow,
+    recognizeSingleStroke,
+    recognizeMultiStroke,
     clearStrokePreview
   };
 })();
