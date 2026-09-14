@@ -12,8 +12,13 @@
 const AIAssistant = (() => {
 
   const STORAGE_KEY = 'eduverse_gemini_api_key';
-  const DEFAULT_KEY = '';
-  const FAST_MODELS = ['gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-flash-latest'];
+  const DEFAULT_KEY = 'AIzaSyCvDNXRe68dq7xYxbLnLm4nkQ5qW46tKao';
+  const FAST_MODELS = [
+    'gemini-flash-lite-latest',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-flash-latest'
+  ];
   let currentModel = FAST_MODELS[0];
   let isLoading = false;
   let lastGeneratedText = '';
@@ -21,7 +26,7 @@ const AIAssistant = (() => {
   function getApiKey() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && saved.trim()) return saved.trim();
+      if (saved && saved.trim() && saved.trim().length > 15) return saved.trim();
     } catch (e) {}
     return DEFAULT_KEY;
   }
@@ -109,6 +114,12 @@ CRITICAL FORMATTING RULES:
   // UI MOUNTING — Premium PiyushDhara AI Panel
   // ─────────────────────────────────────────────
   function ensureDrawerMounted() {
+    try {
+      if (!localStorage.getItem(STORAGE_KEY)) {
+        localStorage.setItem(STORAGE_KEY, DEFAULT_KEY);
+      }
+    } catch (e) {}
+
     if (document.getElementById('ai-drawer')) return;
 
     const drawer = document.createElement('div');
@@ -182,14 +193,18 @@ CRITICAL FORMATTING RULES:
       <!-- Collapsible Settings Panel -->
       <div id="ai-settings-panel" class="ai-settings-panel hidden">
         <div class="ai-input-group">
-          <label class="ai-field-label">🔑 Gemini API Key</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <label class="ai-field-label" style="margin-bottom:0;">🔑 Gemini API Key</label>
+            <span style="font-size:10.5px;font-weight:700;color:#10b981;background:rgba(16,185,129,0.15);padding:2px 8px;border-radius:4px;border:1px solid rgba(16,185,129,0.3);">● Connected Directly</span>
+          </div>
           <div class="ai-key-wrap">
-            <input type="password" id="ai-settings-key" class="ai-text-input" placeholder="Enter Gemini API Key..." autocomplete="off">
+            <input type="password" id="ai-settings-key" class="ai-text-input" placeholder="Gemini API Key active..." autocomplete="off">
             <button class="ai-toggle-key-btn" onclick="AIAssistant.toggleKeyVisibility()" title="Show/Hide Key">👁️</button>
           </div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:5px;">API Key is pre-configured directly inside the application. No manual setup needed.</div>
         </div>
         <div class="ai-settings-actions">
-          <button class="ai-btn-save-key" onclick="AIAssistant.saveSettings()">Save Key</button>
+          <button class="ai-btn-save-key" onclick="AIAssistant.saveSettings()">Update Key</button>
         </div>
       </div>
 
@@ -748,7 +763,13 @@ CRITICAL FORMATTING RULES:
 
   function toggleSettings() {
     const panel = document.getElementById('ai-settings-panel');
-    if (panel) panel.classList.toggle('hidden');
+    if (panel) {
+      panel.classList.toggle('hidden');
+      if (!panel.classList.contains('hidden')) {
+        const input = document.getElementById('ai-settings-key');
+        if (input && !input.value) input.value = getApiKey();
+      }
+    }
   }
 
   function toggleKeyVisibility() {
