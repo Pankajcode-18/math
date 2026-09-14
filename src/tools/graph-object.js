@@ -1187,6 +1187,17 @@ const GraphObject = (() => {
 
   let editingGraph = null;
   let activeModalTab = 'templates'; // 'templates', 'sliders', 'functions', 'settings'
+  let activeTemplateSection = 'algebraic'; // 'algebraic', 'trigonometric', 'all'
+
+  function switchTemplateSection(sec) {
+    activeTemplateSection = sec;
+    const modal = document.getElementById('graph-object-editor-modal');
+    if (!modal || !editingGraph) return;
+    const body = modal.querySelector('#gos-body');
+    if (body && activeModalTab === 'templates') {
+      renderTemplatesTab(body, editingGraph);
+    }
+  }
 
   function openEditor(graphShape) {
     editingGraph = graphShape;
@@ -1210,21 +1221,21 @@ const GraphObject = (() => {
     modal.className = 'board-bg-modal';
     modal.innerHTML = `
       <div class="bbm-overlay" onclick="GraphObject.closeEditor()"></div>
-      <div class="bbm-content" style="max-width:580px;border:1px solid rgba(56,189,248,0.35);box-shadow:0 20px 50px rgba(0,0,0,0.7);">
+      <div class="bbm-content" style="max-width:840px;width:95vw;border:1px solid rgba(56,189,248,0.35);box-shadow:0 24px 60px rgba(0,0,0,0.8);border-radius:14px;">
         <!-- Header -->
-        <div class="bbm-header" style="background:rgba(15,23,42,0.8);border-bottom:1px solid rgba(255,255,255,0.08);padding:14px 20px;">
+        <div class="bbm-header" style="background:rgba(15,23,42,0.85);border-bottom:1px solid rgba(255,255,255,0.08);padding:14px 22px;">
           <div class="bbm-title-wrap">
-            <span class="bbm-icon" style="font-size:20px;">📊</span>
+            <span class="bbm-icon" style="font-size:22px;">📊</span>
             <div>
-              <div class="bbm-title" style="font-size:16px;font-weight:700;">Mathematical Graph Studio</div>
-              <div style="font-size:11px;color:#94a3b8;">Classroom Algebra & Function Teaching Lab</div>
+              <div class="bbm-title" style="font-size:16.5px;font-weight:700;letter-spacing:0.01em;">Mathematical Graph Studio</div>
+              <div style="font-size:11.5px;color:#94a3b8;">Classroom Algebra & Function Teaching Lab</div>
             </div>
           </div>
           <button class="bbm-close" onclick="GraphObject.closeEditor()">✕</button>
         </div>
 
         <!-- Studio Navigation Tabs -->
-        <div style="display:flex;background:rgba(8,15,31,0.9);border-bottom:1px solid rgba(255,255,255,0.08);padding:0 14px;">
+        <div style="display:flex;background:rgba(8,15,31,0.9);border-bottom:1px solid rgba(255,255,255,0.08);padding:0 16px;">
           <button class="gos-tab active" id="gos-tab-templates" onclick="GraphObject.switchStudioTab('templates')">📐 Templates</button>
           <button class="gos-tab" id="gos-tab-sliders" onclick="GraphObject.switchStudioTab('sliders')">🔢 Parameters (a, b, c)</button>
           <button class="gos-tab" id="gos-tab-functions" onclick="GraphObject.switchStudioTab('functions')">📝 Function List</button>
@@ -1232,21 +1243,21 @@ const GraphObject = (() => {
         </div>
 
         <!-- Main Body Content -->
-        <div id="gos-body" style="padding:20px;max-height:480px;overflow-y:auto;display:flex;flex-direction:column;gap:16px;">
+        <div id="gos-body" style="padding:18px 22px;max-height:560px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;">
           <!-- Dynamically populated by switchStudioTab -->
         </div>
 
         <!-- Footer Action Bar -->
-        <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(15,23,42,0.95);border-top:1px solid rgba(255,255,255,0.08);padding:12px 20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(15,23,42,0.95);border-top:1px solid rgba(255,255,255,0.08);padding:12px 22px;">
           <div style="display:flex;gap:8px;">
-            <button class="tb-btn" style="background:rgba(255,255,255,0.08);color:#94a3b8;font-size:12px;padding:6px 12px;" onclick="GraphObject.autoScaleView(GraphObject.getEditingGraph())">
+            <button class="tb-btn" style="background:rgba(255,255,255,0.08);color:#94a3b8;font-size:12px;padding:7px 14px;border-radius:6px;" onclick="GraphObject.autoScaleView(GraphObject.getEditingGraph())">
               ✨ Auto Scale
             </button>
-            <button class="tb-btn" style="background:rgba(255,255,255,0.08);color:#94a3b8;font-size:12px;padding:6px 12px;" onclick="GraphObject.resetView(GraphObject.getEditingGraph())">
+            <button class="tb-btn" style="background:rgba(255,255,255,0.08);color:#94a3b8;font-size:12px;padding:7px 14px;border-radius:6px;" onclick="GraphObject.resetView(GraphObject.getEditingGraph())">
               ⤢ Reset View
             </button>
           </div>
-          <button class="tb-btn" style="background:linear-gradient(135deg,#38bdf8,#0284c7);color:#ffffff;font-weight:700;padding:8px 20px;font-size:13px;" onclick="GraphObject.saveEditor()">
+          <button class="tb-btn" style="background:linear-gradient(135deg,#38bdf8,#0284c7);color:#ffffff;font-weight:700;padding:8px 24px;font-size:13px;border-radius:6px;box-shadow:0 4px 14px rgba(56,189,248,0.25);" onclick="GraphObject.saveEditor()">
             ✓ Apply to Board
           </button>
         </div>
@@ -1280,179 +1291,217 @@ const GraphObject = (() => {
     }
   }
 
-  // Tab 1: Presets & Templates (Reorganized into Algebraic & Trigonometric Sections)
+  // Tab 1: Presets & Templates (Reorganized with Segmented Switcher & Clean Layout)
   function renderTemplatesTab(container, g) {
-    container.innerHTML = `
-      <div style="font-size:13px;color:#cbd5e1;line-height:1.5;margin-bottom:14px;">
-        Select a standard mathematical function family to explore interactive curves with real-time parameter controls:
-      </div>
+    const isAlg = activeTemplateSection === 'algebraic';
+    const isTrig = activeTemplateSection === 'trigonometric';
+    const isAll = activeTemplateSection === 'all';
 
-      <!-- ═══════════════════════════════════════════════════════════ -->
-      <!-- SECTION 1 — ALGEBRAIC FUNCTIONS                             -->
-      <!-- ═══════════════════════════════════════════════════════════ -->
-      <div class="gos-section-block">
-        <div class="gos-section-header">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span class="gos-section-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;border-color:rgba(56,189,248,0.35);">
-              SECTION 1
-            </span>
-            <span style="font-weight:800;font-size:14px;color:#f8fafc;letter-spacing:0.02em;">
-              📐 Algebraic Functions
-            </span>
-          </div>
-          <span style="font-size:11px;color:#94a3b8;">Lines, Polynomials, Exponentials & Logarithms</span>
-        </div>
-
-        <div class="gos-templates-grid">
-          <!-- 1. Linear Function -->
-          <div class="gos-template-card" onclick="GraphObject.applyTemplate('linear')">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-              <span style="font-weight:700;color:#38bdf8;font-size:14px;">📏 Linear Function</span>
-              <span class="gos-math-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;">y = mx + c</span>
-            </div>
-            <div style="font-size:12px;color:#94a3b8;line-height:1.45;">
-              <strong style="color:#e2e8f0;">m</strong> = slope / gradient, <strong style="color:#e2e8f0;">c</strong> = y-intercept. Constant rate of change with increasing or decreasing behavior.
-            </div>
-          </div>
-
-          <!-- 2. Quadratic Function (Two-level selection) -->
-          <div class="gos-template-card gos-card-two-level">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-              <span style="font-weight:700;color:#eab308;font-size:14px;">🎯 Quadratic Equations</span>
-              <span class="gos-math-tag" style="background:rgba(234,179,8,0.15);color:#eab308;">2 Forms</span>
-            </div>
-            <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;line-height:1.45;">
-              Parabolas with vertex, axis of symmetry, opening direction, and real roots.
-            </div>
-            <div style="display:flex;gap:6px;">
-              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('quadratic_vertical')">
-                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Vertical</span>
-                <span style="font-family:monospace;font-size:11px;font-weight:700;color:#eab308;">y = ax² + bx + c</span>
-              </button>
-              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('quadratic_horizontal')">
-                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Horizontal</span>
-                <span style="font-family:monospace;font-size:11px;font-weight:700;color:#f59e0b;">x = ay² + by + c</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 3. Cubic Function -->
-          <div class="gos-template-card" onclick="GraphObject.applyTemplate('cubic')">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-              <span style="font-weight:700;color:#a855f7;font-size:14px;">🌊 Cubic Function</span>
-              <span class="gos-math-tag" style="background:rgba(168,85,247,0.15);color:#a855f7;">y = ax³ + bx² + cx + d</span>
-            </div>
-            <div style="font-size:12px;color:#94a3b8;line-height:1.45;">
-              Demonstrate inflection points, polynomial turning points, and progressive end behavior.
-            </div>
-          </div>
-
-          <!-- 4. Exponential Function -->
-          <div class="gos-template-card" onclick="GraphObject.applyTemplate('exp')">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-              <span style="font-weight:700;color:#10b981;font-size:14px;">🚀 Exponential Curve</span>
-              <span class="gos-math-tag" style="background:rgba(16,185,129,0.15);color:#10b981;">y = a·bˣ + c</span>
-            </div>
-            <div style="font-size:12px;color:#94a3b8;line-height:1.45;">
-              Continuous growth & decay with asymptotic approach toward horizontal asymptote <strong style="color:#e2e8f0;font-family:monospace;">y = c</strong>.
-            </div>
-          </div>
-
-          <!-- 5. Natural Logarithm -->
-          <div class="gos-template-card" style="grid-column: span 2;" onclick="GraphObject.applyTemplate('ln')">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-              <span style="font-weight:700;color:#f43f5e;font-size:14px;">🌲 Natural Logarithm</span>
-              <span class="gos-math-tag" style="background:rgba(244,63,94,0.15);color:#f43f5e;">y = a·ln(x - h) + k  [x > h]</span>
-            </div>
-            <div style="font-size:12px;color:#94a3b8;line-height:1.45;">
-              Strictly respects domain <strong style="color:#e2e8f0;font-family:monospace;">x > h</strong> with asymptotic approach toward vertical asymptote <strong style="color:#e2e8f0;font-family:monospace;">x = h</strong>.
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ═══════════════════════════════════════════════════════════ -->
-      <!-- SECTION 2 — TRIGONOMETRIC FUNCTIONS                         -->
-      <!-- ═══════════════════════════════════════════════════════════ -->
-      <div class="gos-section-block">
-        <div class="gos-section-header">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span class="gos-section-tag" style="background:rgba(168,85,247,0.15);color:#a855f7;border-color:rgba(168,85,247,0.35);">
-              SECTION 2
-            </span>
-            <span style="font-weight:800;font-size:14px;color:#f8fafc;letter-spacing:0.02em;">
-              🌊 Trigonometric Functions
-            </span>
-          </div>
-          <span style="font-size:11px;color:#94a3b8;">Periodic Waves & Reciprocal Trigonometric Pairs</span>
-        </div>
-
-        <div class="gos-templates-grid">
-          <!-- 1. Sine / Cosecant -->
-          <div class="gos-template-card gos-card-two-level">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-              <span style="font-weight:700;color:#38bdf8;font-size:14px;">〰️ Sine & Cosecant</span>
-              <span class="gos-math-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;">Period = 2π/|b|</span>
-            </div>
-            <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;line-height:1.45;">
-              Fundamental harmonic wave and its reciprocal. Amplitude, frequency, and midline analysis.
-            </div>
-            <div style="display:flex;gap:6px;">
-              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_sin')">
-                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Sine</span>
-                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#38bdf8;">y = a·sin(bx + c) + d</span>
-              </button>
-              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_csc')">
-                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Cosecant (1/sin)</span>
-                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#0284c7;">y = a·csc(bx + c) + d</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 2. Cosine / Secant -->
-          <div class="gos-template-card gos-card-two-level">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-              <span style="font-weight:700;color:#06b6d4;font-size:14px;">📐 Cosine & Secant</span>
-              <span class="gos-math-tag" style="background:rgba(6,182,212,0.15);color:#06b6d4;">Period = 2π/|b|</span>
-            </div>
-            <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;line-height:1.45;">
-              Even harmonic wave and its reciprocal with amplitude, midline, and vertical asymptotes.
-            </div>
-            <div style="display:flex;gap:6px;">
-              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_cos')">
-                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Cosine</span>
-                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#06b6d4;">y = a·cos(bx + c) + d</span>
-              </button>
-              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_sec')">
-                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Secant (1/cos)</span>
-                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#0891b2;">y = a·sec(bx + c) + d</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- 3. Tangent / Cotangent -->
-          <div class="gos-template-card gos-card-two-level" style="grid-column: span 2;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-              <span style="font-weight:700;color:#f59e0b;font-size:14px;">⚡ Tangent & Cotangent</span>
-              <span class="gos-math-tag" style="background:rgba(245,158,11,0.15);color:#f59e0b;">Period = π/|b|</span>
-            </div>
-            <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;line-height:1.45;">
-              Ratio waves with asymptotic branches. First-class period control with fundamental period = π/|b|.
-            </div>
-            <div style="display:flex;gap:6px;">
-              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_tan')">
-                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Tangent</span>
-                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#f59e0b;">y = a·tan(bx + c) + d</span>
-              </button>
-              <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_cot')">
-                <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;">Cotangent (1/tan)</span>
-                <span style="font-family:monospace;font-size:10.5px;font-weight:700;color:#d97706;">y = a·cot(bx + c) + d</span>
-              </button>
-            </div>
-          </div>
-        </div>
+    let html = `
+      <!-- Category Segmented Control Switcher -->
+      <div class="gos-section-switcher">
+        <button class="gos-sec-tab ${isAlg ? 'active' : ''}" onclick="GraphObject.switchTemplateSection('algebraic')">
+          <span>📐 Section 1: Algebraic Functions</span>
+          <span class="gos-sec-count">5</span>
+        </button>
+        <button class="gos-sec-tab ${isTrig ? 'active' : ''}" onclick="GraphObject.switchTemplateSection('trigonometric')">
+          <span>🌊 Section 2: Trigonometric Functions</span>
+          <span class="gos-sec-count">3 Pairs</span>
+        </button>
+        <button class="gos-sec-tab ${isAll ? 'active' : ''}" onclick="GraphObject.switchTemplateSection('all')">
+          <span>📑 View All Functions</span>
+          <span class="gos-sec-count">8</span>
+        </button>
       </div>
     `;
+
+    // ═══════════════════════════════════════════════════════════
+    // SECTION 1 — ALGEBRAIC FUNCTIONS
+    // ═══════════════════════════════════════════════════════════
+    if (isAlg || isAll) {
+      html += `
+        <div class="gos-section-block">
+          <div class="gos-section-header">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="gos-section-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;border-color:rgba(56,189,248,0.35);">
+                SECTION 1
+              </span>
+              <span style="font-weight:800;font-size:14px;color:#f8fafc;letter-spacing:0.02em;">
+                📐 Algebraic Functions
+              </span>
+            </div>
+            <span style="font-size:11.5px;color:#94a3b8;">Lines, Polynomials, Exponentials & Logarithms</span>
+          </div>
+
+          <div class="gos-templates-grid">
+            <!-- 1. Linear Function -->
+            <div class="gos-template-card" onclick="GraphObject.applyTemplate('linear')">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <span style="font-weight:700;color:#38bdf8;font-size:14px;">📏 Linear Function</span>
+                <span class="gos-math-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;">y = mx + c</span>
+              </div>
+              <div style="font-size:12px;color:#94a3b8;line-height:1.5;">
+                <div>• <strong style="color:#e2e8f0;">m</strong> = slope / gradient (rate of change)</div>
+                <div>• <strong style="color:#e2e8f0;">c</strong> = y-intercept (value at x = 0)</div>
+                <div>• Increasing / decreasing linear behavior with real-time controls</div>
+              </div>
+            </div>
+
+            <!-- 2. Quadratic Function (Two-level selection) -->
+            <div class="gos-template-card gos-card-two-level">
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <span style="font-weight:700;color:#eab308;font-size:14px;">🎯 Quadratic Equations</span>
+                  <span class="gos-math-tag" style="background:rgba(234,179,8,0.15);color:#eab308;">2 Forms</span>
+                </div>
+                <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;line-height:1.45;">
+                  Parabolas with vertex, axis of symmetry, opening direction, and roots:
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('quadratic_vertical')">
+                  <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Vertical Form</span>
+                  <span style="font-family:monospace;font-size:11.5px;font-weight:700;color:#eab308;">y = ax² + bx + c</span>
+                </button>
+                <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('quadratic_horizontal')">
+                  <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Horizontal Form</span>
+                  <span style="font-family:monospace;font-size:11.5px;font-weight:700;color:#f59e0b;">x = ay² + by + c</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 3. Cubic Function -->
+            <div class="gos-template-card" onclick="GraphObject.applyTemplate('cubic')">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <span style="font-weight:700;color:#a855f7;font-size:14px;">🌊 Cubic Function</span>
+                <span class="gos-math-tag" style="background:rgba(168,85,247,0.15);color:#a855f7;">y = ax³ + bx² + cx + d</span>
+              </div>
+              <div style="font-size:12px;color:#94a3b8;line-height:1.5;">
+                <div>• Inflection point & local extrema turning points</div>
+                <div>• Demonstrates progressive cubic end behavior</div>
+              </div>
+            </div>
+
+            <!-- 4. Exponential Function -->
+            <div class="gos-template-card" onclick="GraphObject.applyTemplate('exp')">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <span style="font-weight:700;color:#10b981;font-size:14px;">🚀 Exponential Curve</span>
+                <span class="gos-math-tag" style="background:rgba(168,85,129,0.15);color:#10b981;">y = a·bˣ + c</span>
+              </div>
+              <div style="font-size:12px;color:#94a3b8;line-height:1.5;">
+                <div>• Continuous growth (b &gt; 1) & decay (0 &lt; b &lt; 1)</div>
+                <div>• Asymptotic approach toward horizontal asymptote <strong style="color:#e2e8f0;font-family:monospace;">y = c</strong></div>
+              </div>
+            </div>
+
+            <!-- 5. Natural Logarithm -->
+            <div class="gos-template-card" style="grid-column: span 2;" onclick="GraphObject.applyTemplate('ln')">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <span style="font-weight:700;color:#f43f5e;font-size:14px;">🌲 Natural Logarithm</span>
+                <span class="gos-math-tag" style="background:rgba(244,63,94,0.15);color:#f43f5e;">y = a·ln(x - h) + k &nbsp;[x &gt; h]</span>
+              </div>
+              <div style="font-size:12px;color:#94a3b8;line-height:1.5;">
+                Inverse of exponential function. Strictly respects domain <strong style="color:#e2e8f0;font-family:monospace;">x &gt; h</strong> with asymptotic approach toward vertical asymptote <strong style="color:#e2e8f0;font-family:monospace;">x = h</strong>.
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SECTION 2 — TRIGONOMETRIC FUNCTIONS
+    // ═══════════════════════════════════════════════════════════
+    if (isTrig || isAll) {
+      html += `
+        <div class="gos-section-block">
+          <div class="gos-section-header">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="gos-section-tag" style="background:rgba(168,85,247,0.15);color:#a855f7;border-color:rgba(168,85,247,0.35);">
+                SECTION 2
+              </span>
+              <span style="font-weight:800;font-size:14px;color:#f8fafc;letter-spacing:0.02em;">
+                🌊 Trigonometric Functions
+              </span>
+            </div>
+            <span style="font-size:11.5px;color:#94a3b8;">Periodic Waves & Reciprocal Trigonometric Pairs</span>
+          </div>
+
+          <div class="gos-templates-grid">
+            <!-- 1. Sine / Cosecant -->
+            <div class="gos-template-card gos-card-two-level">
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <span style="font-weight:700;color:#38bdf8;font-size:14px;">〰️ Sine & Cosecant</span>
+                  <span class="gos-math-tag" style="background:rgba(56,189,248,0.15);color:#38bdf8;">Period = 2π/|b|</span>
+                </div>
+                <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;line-height:1.45;">
+                  Fundamental harmonic wave and its reciprocal with amplitude, frequency, and midline analysis.
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_sin')">
+                  <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Sine Wave</span>
+                  <span style="font-family:monospace;font-size:11px;font-weight:700;color:#38bdf8;">y = a·sin(bx + c) + d</span>
+                </button>
+                <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_csc')">
+                  <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Cosecant (1/sin)</span>
+                  <span style="font-family:monospace;font-size:11px;font-weight:700;color:#0284c7;">y = a·csc(bx + c) + d</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 2. Cosine / Secant -->
+            <div class="gos-template-card gos-card-two-level">
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <span style="font-weight:700;color:#06b6d4;font-size:14px;">📐 Cosine & Secant</span>
+                  <span class="gos-math-tag" style="background:rgba(6,182,212,0.15);color:#06b6d4;">Period = 2π/|b|</span>
+                </div>
+                <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;line-height:1.45;">
+                  Even harmonic wave and its reciprocal with amplitude, midline, and vertical asymptotes.
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_cos')">
+                  <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Cosine Wave</span>
+                  <span style="font-family:monospace;font-size:11px;font-weight:700;color:#06b6d4;">y = a·cos(bx + c) + d</span>
+                </button>
+                <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_sec')">
+                  <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Secant (1/cos)</span>
+                  <span style="font-family:monospace;font-size:11px;font-weight:700;color:#0891b2;">y = a·sec(bx + c) + d</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 3. Tangent / Cotangent -->
+            <div class="gos-template-card gos-card-two-level" style="grid-column: span 2;">
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <span style="font-weight:700;color:#f59e0b;font-size:14px;">⚡ Tangent & Cotangent</span>
+                  <span class="gos-math-tag" style="background:rgba(245,158,11,0.15);color:#f59e0b;">Period = π/|b|</span>
+                </div>
+                <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;line-height:1.45;">
+                  Ratio waves with asymptotic branches. First-class period control with fundamental period = π/|b|.
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_tan')">
+                  <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Tangent Wave</span>
+                  <span style="font-family:monospace;font-size:11px;font-weight:700;color:#f59e0b;">y = a·tan(bx + c) + d</span>
+                </button>
+                <button class="gos-variant-btn" onclick="event.stopPropagation(); GraphObject.applyTemplate('trig_cot')">
+                  <span style="display:block;font-size:9.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Cotangent (1/tan)</span>
+                  <span style="font-family:monospace;font-size:11px;font-weight:700;color:#d97706;">y = a·cot(bx + c) + d</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    container.innerHTML = html;
   }
 
   // ── Complete Standard General Equations ─────────────────────────────────────
@@ -2423,6 +2472,7 @@ const GraphObject = (() => {
     openEditor,
     closeEditor,
     switchStudioTab,
+    switchTemplateSection,
     applyTemplate,
     updateParam,
     setParam,
