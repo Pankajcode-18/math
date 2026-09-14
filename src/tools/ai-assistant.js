@@ -1,12 +1,7 @@
 'use strict';
 
 // ══════════════════════════════════════════════════════════════════════════
-// PIYUSHDHARA AI ASSISTANT — Premium SmartBoard AI
-// Features:
-// 1. Ask anything (math, science, questions, quizzes, definitions, steps)
-// 2. Clear, step-by-step formatted response
-// 3. 📋 Copy to Clipboard
-// 4. ✨ Paste onto Whiteboard (places clean movable text directly on board)
+// PIYUSHDHARA AI ASSISTANT — Next-Gen Smart Teaching Copilot
 // ══════════════════════════════════════════════════════════════════════════
 
 const AIAssistant = (() => {
@@ -19,9 +14,11 @@ const AIAssistant = (() => {
     'gemini-2.5-flash',
     'gemini-flash-latest'
   ];
-  let currentModel = FAST_MODELS[0];
   let isLoading = false;
-  let lastGeneratedText = '';
+  let activeMode = 'all'; // 'all', 'math', 'concept', 'quiz'
+  let chatHistory = [];
+  let recognition = null;
+  let isListening = false;
 
   function getApiKey() {
     try {
@@ -38,27 +35,37 @@ const AIAssistant = (() => {
   }
 
   // ─────────────────────────────────────────────
-  // ULTRA-FAST API CALL TO GEMINI
+  // GEMINI API CALL WITH ROBUST FALLBACK
   // ─────────────────────────────────────────────
-  async function callGemini(promptText) {
+  async function callGemini(promptText, mode = 'all') {
     const key = getApiKey();
     if (!key) {
-      throw new Error('Gemini API Key is missing. Click the ⚙️ gear icon to enter your API key.');
+      throw new Error('Gemini API Key is missing. Click the ⚙️ Settings icon to enter your key.');
     }
 
-    const systemInstruction = `You are an elite, fast, and clear teaching assistant for a classroom digital smartboard.
+    let modeInstruction = '';
+    if (mode === 'math') {
+      modeInstruction = 'Focus on rigorous, clean step-by-step mathematical or scientific solutions with final answer clearly highlighted.';
+    } else if (mode === 'concept') {
+      modeInstruction = 'Explain the concept simply and intuitively, using an everyday example or analogy, followed by key properties.';
+    } else if (mode === 'quiz') {
+      modeInstruction = 'Create 3-4 interactive classroom practice questions (varying difficulty) with detailed answers and hints below.';
+    }
+
+    const systemInstruction = `You are PiyushDhara AI, an elite, friendly, and crystal-clear smartboard teaching assistant.
+${modeInstruction}
+
 CRITICAL FORMATTING RULES:
 1. NEVER use dollar signs ($ or $$) anywhere in your response.
-2. NEVER use raw LaTeX syntax (such as \\frac, \\times, \\pm, \\sqrt).
+2. NEVER use raw LaTeX syntax (e.g. do not use \\frac, \\times, \\pm, \\sqrt).
 3. Write clean, natural math in plain text using Unicode characters:
    - Powers: write x², x³, x⁴, y² (not x^2)
    - Fractions: write (a) / (b) or a / b (not \\frac{a}{b})
-   - Roots: write √(x) or √(b² - 4ac) (not \\sqrt)
-   - Symbols: use ±, ×, ÷, ·, ≤, ≥, ≠, ≈, π, θ, °, →
-   - Variables: write a = 2, b = 5, c = -3 (NEVER $a = 2$)
-4. Format steps clearly with numbers (Step 1, Step 2...) and short bullet points.
-5. Keep explanations neat and concise so the teacher can directly paste it onto the whiteboard.
-6. COMPLETENESS: Always provide the full complete solution all the way to the final answer. Never stop halfway or leave calculations unfinished.`;
+   - Roots: write √(x) or √(b² - 4ac)
+   - Symbols: use ±, ×, ÷, ·, ≤, ≥, ≠, ≈, π, θ, °, →, Δ
+   - Variables: write a = 2, b = 5, c = -3
+4. Structure your response with clear headings (## or ###), bullet points, and numbered steps.
+5. Provide the full complete solution all the way to the final answer. Keep it crisp, readable, and ready to paste on a classroom board.`;
 
     const payload = {
       contents: [
@@ -70,17 +77,16 @@ CRITICAL FORMATTING RULES:
       ],
       generationConfig: {
         maxOutputTokens: 4096,
-        temperature: 0.2
+        temperature: 0.25
       }
     };
 
-    // Try models in order: gemini-3.5-flash-lite (1s ultra-fast) -> gemini-2.5-flash -> gemini-flash-latest
     let lastError = null;
     for (const model of FAST_MODELS) {
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const timeoutId = setTimeout(() => controller.abort(), 28000);
 
         const response = await fetch(endpoint, {
           method: 'POST',
@@ -94,7 +100,7 @@ CRITICAL FORMATTING RULES:
           const errData = await response.json().catch(() => ({}));
           const msg = errData.error?.message || `HTTP ${response.status}`;
           lastError = new Error(`Model ${model}: ${msg}`);
-          continue; // try next model
+          continue;
         }
 
         const result = await response.json();
@@ -111,7 +117,7 @@ CRITICAL FORMATTING RULES:
   }
 
   // ─────────────────────────────────────────────
-  // UI MOUNTING — Premium PiyushDhara AI Panel
+  // UI MOUNTING — Modern Floating Smart AI Panel
   // ─────────────────────────────────────────────
   function ensureDrawerMounted() {
     try {
@@ -126,357 +132,263 @@ CRITICAL FORMATTING RULES:
     drawer.id = 'ai-drawer';
     drawer.className = 'ai-drawer hidden';
     drawer.innerHTML = `
-      <!-- Premium PiyushDhara AI Header -->
+      <!-- Top Glow & Mesh Effect -->
+      <div class="ai-ambient-glow"></div>
+
+      <!-- Modern Glass Header -->
       <div class="ai-drawer-header">
-        <div class="ai-header-glow"></div>
+        <div class="ai-header-left">
+          <div class="ai-avatar-badge">
+            <div class="ai-avatar-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="10" rx="4"></rect>
+                <circle cx="12" cy="5" r="2"></circle>
+                <path d="M12 7v4"></path>
+                <line x1="8" y1="16" x2="8.01" y2="16"></line>
+                <line x1="16" y1="16" x2="16.01" y2="16"></line>
+              </svg>
+            </div>
+            <span class="ai-status-beacon" title="AI Ready & Connected"></span>
+          </div>
+          <div class="ai-title-group">
+            <div class="ai-brand-headline">
+              <span class="ai-brand-text">PiyushDhara AI</span>
+              <span class="ai-model-pill">⚡ 2.5 Flash</span>
+            </div>
+            <span class="ai-sub-status">Smart Teaching Assistant · Instant Steps</span>
+          </div>
+        </div>
 
-        <div class="ai-drawer-title">
-          <!-- PiyushDhara Robot Logo -->
-          <div class="ai-brand-logo">
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="pd-bodyGrad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stop-color="#a855f7"/>
-                  <stop offset="100%" stop-color="#6366f1"/>
-                </linearGradient>
-                <linearGradient id="pd-headGrad" x1="0" y1="0" x2="40" y2="20" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stop-color="#818cf8"/>
-                  <stop offset="100%" stop-color="#6366f1"/>
-                </linearGradient>
-              </defs>
-              <!-- Body -->
-              <rect x="9" y="17" width="22" height="16" rx="4" fill="url(#pd-bodyGrad)"/>
-              <!-- Head -->
-              <rect x="12" y="7" width="16" height="12" rx="3" fill="url(#pd-headGrad)"/>
-              <!-- Antenna base -->
-              <rect x="19" y="4" width="2" height="4" rx="1" fill="#c084fc"/>
-              <!-- Antenna tip glow dot -->
-              <circle cx="20" cy="3" r="2" fill="#e879f9" opacity="0.9"/>
-              <!-- Left eye -->
-              <circle cx="16" cy="13" r="2.5" fill="#0ea5e9"/>
-              <circle cx="16" cy="13" r="1.2" fill="white"/>
-              <circle cx="16.5" cy="12.5" r="0.4" fill="#bfdbfe"/>
-              <!-- Right eye -->
-              <circle cx="24" cy="13" r="2.5" fill="#0ea5e9"/>
-              <circle cx="24" cy="13" r="1.2" fill="white"/>
-              <circle cx="24.5" cy="12.5" r="0.4" fill="#bfdbfe"/>
-              <!-- Smile -->
-              <rect x="14" y="22" width="12" height="4.5" rx="2.2" fill="rgba(255,255,255,0.18)"/>
-              <rect x="15.5" y="23.2" width="2" height="1.2" rx="0.6" fill="#c084fc"/>
-              <rect x="19" y="23.2" width="2" height="1.2" rx="0.6" fill="#c084fc"/>
-              <rect x="22.5" y="23.2" width="2" height="1.2" rx="0.6" fill="#c084fc"/>
-              <!-- Arms -->
-              <rect x="2" y="20" width="7" height="3.5" rx="1.75" fill="#818cf8"/>
-              <rect x="31" y="20" width="7" height="3.5" rx="1.75" fill="#818cf8"/>
-              <!-- Chest indicator dot -->
-              <circle cx="20" cy="29.5" r="2" fill="rgba(255,255,255,0.25)" stroke="rgba(192,132,252,0.5)" stroke-width="1"/>
-              <circle cx="20" cy="29.5" r="0.8" fill="#c084fc"/>
+        <div class="ai-header-right">
+          <button class="ai-nav-btn" onclick="AIAssistant.clearChatHistory()" title="Clear conversation" aria-label="Clear Chat">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
-            <div class="ai-logo-pulse"></div>
-          </div>
-
-          <div class="ai-title-wrap">
-            <div class="ai-brand-name">
-              <span class="ai-pd-text">PiyushDhara</span>
-              <span class="ai-ai-badge">AI</span>
-            </div>
-            <span class="ai-sub-title">✦ Your intelligent classroom assistant</span>
-          </div>
-        </div>
-
-        <div class="ai-header-actions">
-          <button class="ai-icon-btn" id="ai-btn-settings-toggle" onclick="AIAssistant.toggleSettings()" title="API Key Settings">⚙️</button>
-          <button class="ai-close-btn" onclick="AIAssistant.closePanel()" title="Close (Esc)">✕</button>
-        </div>
-      </div>
-
-      <!-- Collapsible Settings Panel -->
-      <div id="ai-settings-panel" class="ai-settings-panel hidden">
-        <div class="ai-input-group">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-            <label class="ai-field-label" style="margin-bottom:0;">🔑 Gemini API Key</label>
-            <span style="font-size:10.5px;font-weight:700;color:#10b981;background:rgba(16,185,129,0.15);padding:2px 8px;border-radius:4px;border:1px solid rgba(16,185,129,0.3);">● Connected Directly</span>
-          </div>
-          <div class="ai-key-wrap">
-            <input type="password" id="ai-settings-key" class="ai-text-input" placeholder="Gemini API Key active..." autocomplete="off">
-            <button class="ai-toggle-key-btn" onclick="AIAssistant.toggleKeyVisibility()" title="Show/Hide Key">👁️</button>
-          </div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:5px;">API Key is pre-configured directly inside the application. No manual setup needed.</div>
-        </div>
-        <div class="ai-settings-actions">
-          <button class="ai-btn-save-key" onclick="AIAssistant.saveSettings()">Update Key</button>
-        </div>
-      </div>
-
-      <!-- Main Body -->
-      <div class="ai-drawer-body">
-
-        <!-- Quick Suggestion Chips -->
-        <div class="ai-chips-label">⚡ Quick Questions</div>
-        <div class="ai-quick-chips">
-          <button class="ai-chip" onclick="AIAssistant.setPrompt('Solve step-by-step: 2x² + 5x - 3 = 0')">📐 Solve 2x²+5x−3=0</button>
-          <button class="ai-chip" onclick="AIAssistant.setPrompt('State and prove Pythagoras theorem with clean steps')">📏 Pythagoras Proof</button>
-          <button class="ai-chip" onclick="AIAssistant.setPrompt('Explain Newton\'s 3 laws of motion with formulas')">🔭 Newton's Laws</button>
-          <button class="ai-chip" onclick="AIAssistant.setPrompt('Give 3 practice questions with answers on Circle geometry')">📝 Practice Questions</button>
-        </div>
-
-        <!-- Input Box -->
-        <div class="ai-input-group">
-          <label class="ai-field-label">💬 Ask PiyushDhara AI anything</label>
-          <div class="ai-textarea-wrap">
-            <textarea id="ai-solve-input" class="ai-textarea" rows="3" placeholder="Type your question... (e.g. Solve 3x + 12 = 45, explain photosynthesis, quiz on triangles)"></textarea>
-            <div class="ai-textarea-accent"></div>
-          </div>
-        </div>
-
-        <!-- Action Row -->
-        <div class="ai-action-row">
-          <button class="ai-primary-btn" id="btn-ai-solve-run" onclick="AIAssistant.askQuestion()">
-            <span class="ai-btn-icon">✨</span>
-            <span>Ask PiyushDhara AI</span>
           </button>
-          <button class="ai-secondary-btn" onclick="AIAssistant.clearInput()">Clear</button>
+          <button class="ai-nav-btn" id="ai-btn-settings-toggle" onclick="AIAssistant.toggleSettings()" title="Gemini API Key Settings" aria-label="Settings">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+          <button class="ai-nav-btn close" onclick="AIAssistant.closePanel()" title="Close Assistant (Esc)" aria-label="Close">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
         </div>
+      </div>
 
-        <!-- Loading State -->
-        <div id="ai-loading" class="ai-loading-container hidden">
-          <div class="ai-loading-orb">
-            <div class="ai-spinner"></div>
+      <!-- Settings Flyout Sheet -->
+      <div id="ai-settings-panel" class="ai-settings-panel hidden">
+        <div class="ai-settings-inner">
+          <div class="ai-settings-row-head">
+            <span class="ai-settings-title">⚙️ API Settings</span>
+            <span class="ai-badge-live">● Direct Active</span>
           </div>
-          <div class="ai-loading-content">
-            <span class="ai-loading-text" id="ai-loading-text">PiyushDhara AI is thinking...</span>
-            <span class="ai-loading-sub">Generating a precise answer for you</span>
+          <p class="ai-settings-hint">Google Gemini API is directly built-in for instant answers. You can optionally supply your own custom key.</p>
+          <div class="ai-key-input-row">
+            <input type="password" id="ai-settings-key" class="ai-key-field" placeholder="Enter custom Gemini Key..." autocomplete="off">
+            <button class="ai-key-eye-btn" onclick="AIAssistant.toggleKeyVisibility()" title="Show/Hide Key">👁️</button>
+            <button class="ai-key-save-btn" onclick="AIAssistant.saveSettings()">Save</button>
           </div>
         </div>
+      </div>
 
-        <!-- Output / Solution Card -->
-        <div id="ai-result-section" class="ai-result-section hidden">
-          <div class="ai-result-header">
-            <div class="ai-result-badge">
-              <span class="ai-badge-dot"></span>
-              <span id="ai-result-tag">PiyushDhara AI Answer</span>
+      <!-- Category Filter Tabs -->
+      <div class="ai-tabs-strip">
+        <button class="ai-tab-chip active" data-mode="all" onclick="AIAssistant.setMode('all')">
+          <span>✨</span> All Topics
+        </button>
+        <button class="ai-tab-chip" data-mode="math" onclick="AIAssistant.setMode('math')">
+          <span>📐</span> Math & Physics
+        </button>
+        <button class="ai-tab-chip" data-mode="concept" onclick="AIAssistant.setMode('concept')">
+          <span>💡</span> Concepts
+        </button>
+        <button class="ai-tab-chip" data-mode="quiz" onclick="AIAssistant.setMode('quiz')">
+          <span>📝</span> Practice Quiz
+        </button>
+      </div>
+
+      <!-- Chat / Conversation Stream Area -->
+      <div class="ai-stream-container" id="ai-stream-container">
+
+        <!-- Welcome Banner & Quick Prompts (visible when empty) -->
+        <div id="ai-empty-state" class="ai-empty-state">
+          <div class="ai-hero-illustration">
+            <div class="ai-hero-circle">
+              <span class="ai-hero-icon">🤖</span>
             </div>
-            <div class="ai-result-actions">
-              <button class="ai-btn-sm" id="btn-ai-copy-top" onclick="AIAssistant.copyResult()" title="Copy to clipboard">📋 Copy</button>
-              <button class="ai-btn-sm danger" onclick="AIAssistant.clearResult()" title="Dismiss">✕</button>
+          </div>
+          <h3 class="ai-hero-title">How can I assist your class today?</h3>
+          <p class="ai-hero-sub">Ask any math problem, physics formula, scientific concept, or ask for quick classroom quizzes.</p>
+
+          <div class="ai-quick-suggestions">
+            <div class="ai-sug-title">Suggested Quick Questions:</div>
+            <div class="ai-sug-grid">
+              <button class="ai-sug-card" onclick="AIAssistant.setPrompt('Solve step-by-step: 2x² + 5x - 3 = 0')">
+                <span class="ai-sug-icon">📐</span>
+                <span class="ai-sug-text">Solve 2x² + 5x − 3 = 0</span>
+              </button>
+              <button class="ai-sug-card" onclick="AIAssistant.setPrompt('State and prove Pythagoras theorem with clear steps and diagram formula')">
+                <span class="ai-sug-icon">📏</span>
+                <span class="ai-sug-text">Pythagoras Theorem Proof</span>
+              </button>
+              <button class="ai-sug-card" onclick="AIAssistant.setPrompt('Explain Newton\\'s 3 laws of motion with real-life examples and formulas')">
+                <span class="ai-sug-icon">🔭</span>
+                <span class="ai-sug-text">Newton\\'s Laws of Motion</span>
+              </button>
+              <button class="ai-sug-card" onclick="AIAssistant.setPrompt('Give 3 practice questions with answers on Trigonometry heights and distances')">
+                <span class="ai-sug-icon">📝</span>
+                <span class="ai-sug-text">Trigonometry Quiz (3 Qs)</span>
+              </button>
             </div>
           </div>
+        </div>
 
-          <!-- Answer Body -->
-          <div class="ai-result-body" id="ai-result-body"></div>
+        <!-- Dynamic Message Stream -->
+        <div id="ai-chat-feed" class="ai-chat-feed"></div>
 
-          <!-- Action Buttons -->
-          <div class="ai-dual-actions">
-            <button class="ai-btn-copy-big" id="btn-ai-copy-big" onclick="AIAssistant.copyResult()">
-              📋 Copy
+        <!-- Live Loading Indicator -->
+        <div id="ai-loading-card" class="ai-loading-card hidden">
+          <div class="ai-thinking-orb">
+            <div class="ai-orb-ring"></div>
+            <div class="ai-orb-core">✨</div>
+          </div>
+          <div class="ai-thinking-text-wrap">
+            <div class="ai-thinking-title" id="ai-loading-title">PiyushDhara AI is generating steps...</div>
+            <div class="ai-thinking-sub">Formulating clean whiteboard-ready solution</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Interactive Input Capsule -->
+      <div class="ai-bottom-dock">
+        <div class="ai-input-capsule">
+          <textarea 
+            id="ai-solve-input" 
+            class="ai-smart-textarea" 
+            rows="1" 
+            placeholder="Type your question or math problem here..."
+            aria-label="Ask AI Assistant"></textarea>
+
+          <div class="ai-capsule-actions">
+            <!-- Voice Input Button -->
+            <button id="ai-mic-btn" class="ai-action-icon-btn" onclick="AIAssistant.toggleVoiceInput()" title="Voice Dictation (Speech to text)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
             </button>
-            <button class="ai-btn-paste-big" onclick="AIAssistant.insertOntoBoard()">
-              ✨ Paste to Board
+
+            <!-- Send Action Button -->
+            <button id="btn-ai-solve-run" class="ai-send-btn" onclick="AIAssistant.askQuestion()" title="Send question (Enter)">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
             </button>
           </div>
         </div>
 
-        <!-- Powered-by Footer -->
-        <div class="ai-powered-footer">
-          <span class="ai-footer-robot">🤖</span>
-          <span>Powered by <b>PiyushDhara</b> · Gemini AI</span>
+        <div class="ai-dock-hints">
+          <span>💡 <b>Enter</b> to send · <b>Shift + Enter</b> for new line</span>
+          <span class="ai-brand-tag">PiyushDhara SmartBoard Copilot</span>
         </div>
-
       </div>
     `;
 
     document.body.appendChild(drawer);
 
-    // Inject premium CSS
-    injectStyles();
-
-    // Populate saved key
-    const keyInput = document.getElementById('ai-settings-key');
-    if (keyInput) keyInput.value = getApiKey();
-
-    // Support Ctrl+Enter in textarea to submit
+    // Auto-adjust textarea height on input
     const textarea = document.getElementById('ai-solve-input');
     if (textarea) {
+      textarea.addEventListener('input', () => {
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+      });
+
       textarea.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
           askQuestion();
         }
       });
     }
+
+    // Initialize Web Speech Recognition if available
+    initSpeechRecognition();
+
+    // Populate API key if available
+    const keyInput = document.getElementById('ai-settings-key');
+    if (keyInput) keyInput.value = getApiKey();
   }
 
   // ─────────────────────────────────────────────
-  // INJECT PREMIUM STYLES
+  // VOICE SPEECH RECOGNITION
   // ─────────────────────────────────────────────
-  function injectStyles() {
-    if (document.getElementById('piyushdhara-ai-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'piyushdhara-ai-styles';
-    style.textContent = `
-      /* ─── PiyushDhara AI Panel Overrides ─── */
+  function initSpeechRecognition() {
+    const SpeechAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechAPI) return;
 
-      .ai-header-glow {
-        position: absolute;
-        inset: 0;
-        background: radial-gradient(ellipse at 20% 50%, rgba(168, 85, 247, 0.18) 0%, transparent 70%),
-                    radial-gradient(ellipse at 80% 50%, rgba(99, 102, 241, 0.14) 0%, transparent 70%);
-        pointer-events: none;
-      }
+    try {
+      recognition = new SpeechAPI();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
 
-      .ai-brand-logo {
-        position: relative;
-        width: 46px;
-        height: 46px;
-        border-radius: 14px;
-        background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(99, 102, 241, 0.15));
-        border: 1.5px solid rgba(168, 85, 247, 0.4);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 0 18px rgba(168, 85, 247, 0.35), inset 0 1px 0 rgba(255,255,255,0.1);
-        flex-shrink: 0;
-        transition: box-shadow 0.3s ease;
-      }
+      recognition.onstart = () => {
+        isListening = true;
+        const micBtn = document.getElementById('ai-mic-btn');
+        if (micBtn) micBtn.classList.add('recording');
+        if (typeof App !== 'undefined' && App.showToast) {
+          App.showToast('🎙️ Listening... Speak your question now');
+        }
+      };
 
-      .ai-brand-logo:hover {
-        box-shadow: 0 0 28px rgba(168, 85, 247, 0.55), inset 0 1px 0 rgba(255,255,255,0.15);
-      }
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        const input = document.getElementById('ai-solve-input');
+        if (input && transcript) {
+          input.value = (input.value ? input.value + ' ' : '') + transcript;
+          input.style.height = 'auto';
+          input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+          input.focus();
+        }
+      };
 
-      .ai-logo-pulse {
-        position: absolute;
-        inset: -4px;
-        border-radius: 18px;
-        border: 1.5px solid rgba(168, 85, 247, 0.3);
-        animation: pulsering 2.4s ease-out infinite;
-        pointer-events: none;
-      }
+      recognition.onerror = () => {
+        isListening = false;
+        const micBtn = document.getElementById('ai-mic-btn');
+        if (micBtn) micBtn.classList.remove('recording');
+      };
 
-      @keyframes pulsering {
-        0% { opacity: 0.8; transform: scale(1); }
-        70% { opacity: 0; transform: scale(1.25); }
-        100% { opacity: 0; transform: scale(1.25); }
-      }
+      recognition.onend = () => {
+        isListening = false;
+        const micBtn = document.getElementById('ai-mic-btn');
+        if (micBtn) micBtn.classList.remove('recording');
+      };
+    } catch (e) {
+      recognition = null;
+    }
+  }
 
-      .ai-brand-name {
-        display: flex;
-        align-items: center;
-        gap: 6px;
+  function toggleVoiceInput() {
+    if (!recognition) {
+      if (typeof App !== 'undefined' && App.showToast) {
+        App.showToast('Voice input is not supported in this browser environment.');
       }
-
-      .ai-pd-text {
-        font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, sans-serif;
-        font-size: 16px;
-        font-weight: 800;
-        letter-spacing: 0.01em;
-        background: linear-gradient(135deg, #ffffff 20%, #c084fc 60%, #818cf8 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-      }
-
-      .ai-ai-badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 2px 7px;
-        background: linear-gradient(135deg, rgba(168, 85, 247, 0.35), rgba(99, 102, 241, 0.3));
-        border: 1px solid rgba(192, 132, 252, 0.5);
-        border-radius: 6px;
-        font-size: 10px;
-        font-weight: 800;
-        color: #e9d5ff;
-        letter-spacing: 0.08em;
-        box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
-      }
-
-      .ai-chips-label {
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: #94a3b8;
-        margin-bottom: -6px;
-      }
-
-      .ai-textarea-wrap {
-        position: relative;
-      }
-
-      .ai-textarea-accent {
-        position: absolute;
-        bottom: 0;
-        left: 12px;
-        right: 12px;
-        height: 2px;
-        background: linear-gradient(90deg, #a855f7, #6366f1);
-        border-radius: 2px;
-        opacity: 0;
-        transition: opacity 0.2s;
-      }
-
-      .ai-textarea-wrap:focus-within .ai-textarea-accent {
-        opacity: 1;
-      }
-
-      .ai-loading-orb {
-        width: 34px;
-        height: 34px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(99, 102, 241, 0.15));
-        border: 1.5px solid rgba(168, 85, 247, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        box-shadow: 0 0 12px rgba(168, 85, 247, 0.25);
-      }
-
-      .ai-loading-content {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-
-      .ai-loading-sub {
-        font-size: 10.5px;
-        color: #64748b;
-      }
-
-      .ai-powered-footer {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        padding: 8px;
-        font-size: 10.5px;
-        color: #475569;
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
-        margin-top: 2px;
-      }
-
-      .ai-powered-footer b {
-        color: #7c3aed;
-      }
-
-      .ai-footer-robot {
-        font-size: 13px;
-        filter: grayscale(0.3);
-      }
-
-      /* Animated typing dots on loading text */
-      .ai-loading-text::after {
-        content: '';
-        animation: aiDots 1.4s infinite;
-      }
-
-      @keyframes aiDots {
-        0%, 20% { content: ''; }
-        40% { content: '.'; }
-        60% { content: '..'; }
-        80%, 100% { content: '...'; }
-      }
-    `;
-    document.head.appendChild(style);
+      return;
+    }
+    if (isListening) {
+      try { recognition.stop(); } catch (e) {}
+    } else {
+      try { recognition.start(); } catch (e) {}
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -486,55 +398,210 @@ CRITICAL FORMATTING RULES:
     const input = document.getElementById('ai-solve-input');
     const prompt = (input?.value || '').trim();
     if (!prompt) {
-      if (typeof App !== 'undefined' && App.showToast) App.showToast('Please type a question or problem to ask.');
+      if (typeof App !== 'undefined' && App.showToast) {
+        App.showToast('Please type or speak your question first.');
+      }
       input?.focus();
       return;
     }
 
-    setLoading(true, 'PiyushDhara AI is thinking');
-    clearResult();
+    // Hide empty state
+    const emptyState = document.getElementById('ai-empty-state');
+    if (emptyState) emptyState.style.display = 'none';
+
+    // Append user message
+    const msgId = 'msg-' + Date.now();
+    appendUserBubble(prompt);
+
+    // Clear input
+    input.value = '';
+    input.style.height = 'auto';
+
+    // Show loading
+    setLoading(true);
+    scrollStreamToBottom();
 
     try {
-      const response = await callGemini(prompt);
-      showResult('PiyushDhara AI Answer', response);
+      const response = await callGemini(prompt, activeMode);
+      appendAssistantBubble(response, msgId);
+      chatHistory.push({ question: prompt, answer: response });
     } catch (err) {
-      showError(err.message);
+      appendErrorBubble(err.message || 'Error occurred while contacting Gemini AI.');
     } finally {
       setLoading(false);
+      scrollStreamToBottom();
     }
   }
 
   // ─────────────────────────────────────────────
-  // ACTIONS: COPY & PASTE TO BOARD
+  // CHAT STREAM RENDERING
   // ─────────────────────────────────────────────
-  function copyResult() {
-    if (!lastGeneratedText) return;
-    const cleanText = cleanTextForBoard(lastGeneratedText);
+  function appendUserBubble(text) {
+    const feed = document.getElementById('ai-chat-feed');
+    if (!feed) return;
 
-    function onCopied() {
-      ['btn-ai-copy-top', 'btn-ai-copy-big'].forEach(id => {
-        const btn = document.getElementById(id);
-        if (btn) {
-          const orig = btn.innerHTML;
-          btn.innerHTML = '✓ Copied!';
-          btn.classList.add('copied');
-          setTimeout(() => {
-            btn.innerHTML = orig;
-            btn.classList.remove('copied');
-          }, 2000);
-        }
-      });
-      if (typeof App !== 'undefined' && App.showToast) {
-        App.showToast('✓ Copied to clipboard');
-      }
+    const row = document.createElement('div');
+    row.className = 'ai-msg-row user';
+    row.innerHTML = `
+      <div class="ai-msg-bubble user">
+        <div class="ai-msg-text">${escapeHtml(text)}</div>
+      </div>
+    `;
+    feed.appendChild(row);
+  }
+
+  function appendAssistantBubble(text, msgId) {
+    const feed = document.getElementById('ai-chat-feed');
+    if (!feed) return;
+
+    const row = document.createElement('div');
+    row.className = 'ai-msg-row assistant';
+    row.id = msgId;
+
+    const renderedHtml = formatMarkdownForPreview(text);
+
+    row.innerHTML = `
+      <div class="ai-assistant-avatar">
+        <div class="ai-avatar-mini">🤖</div>
+      </div>
+      <div class="ai-msg-card">
+        <div class="ai-card-header">
+          <span class="ai-card-title">PiyushDhara AI · Solution</span>
+          <span class="ai-card-time">${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+        <div class="ai-card-content" id="content-${msgId}">
+          ${renderedHtml}
+        </div>
+        <div class="ai-card-toolbar">
+          <button class="ai-tool-pill" onclick="AIAssistant.copyCardText('${msgId}')" title="Copy solution to clipboard">
+            <span>📋</span> Copy
+          </button>
+          <button class="ai-tool-pill primary" onclick="AIAssistant.insertCardToBoard('${msgId}')" title="Insert directly on Whiteboard">
+            <span>✨</span> Paste on Board
+          </button>
+          <button class="ai-tool-pill" onclick="AIAssistant.speakCardText('${msgId}')" title="Read solution aloud">
+            <span>🔊</span> Speak
+          </button>
+        </div>
+      </div>
+    `;
+    feed.appendChild(row);
+  }
+
+  function appendErrorBubble(errorMsg) {
+    const feed = document.getElementById('ai-chat-feed');
+    if (!feed) return;
+
+    const row = document.createElement('div');
+    row.className = 'ai-msg-row assistant';
+    row.innerHTML = `
+      <div class="ai-assistant-avatar error">
+        <div class="ai-avatar-mini">⚠️</div>
+      </div>
+      <div class="ai-msg-card error-card">
+        <div class="ai-card-header">
+          <span class="ai-card-title error-text">Notice</span>
+        </div>
+        <div class="ai-card-content error-desc">
+          ${escapeHtml(errorMsg)}
+        </div>
+      </div>
+    `;
+    feed.appendChild(row);
+  }
+
+  function clearChatHistory() {
+    chatHistory = [];
+    const feed = document.getElementById('ai-chat-feed');
+    if (feed) feed.innerHTML = '';
+    const emptyState = document.getElementById('ai-empty-state');
+    if (emptyState) emptyState.style.display = 'flex';
+    if (typeof App !== 'undefined' && App.showToast) {
+      App.showToast('Chat history cleared');
     }
+  }
+
+  function scrollStreamToBottom() {
+    const container = document.getElementById('ai-stream-container');
+    if (container) {
+      setTimeout(() => {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      }, 50);
+    }
+  }
+
+  // ─────────────────────────────────────────────
+  // CARD ACTIONS: COPY, PASTE, SPEECH
+  // ─────────────────────────────────────────────
+  function copyCardText(msgId) {
+    const row = document.getElementById(msgId);
+    if (!row) return;
+
+    // Find the stored answer or extract clean text
+    const contentEl = document.getElementById(`content-${msgId}`);
+    const textToCopy = contentEl ? contentEl.innerText : '';
+    const cleanText = cleanTextForBoard(textToCopy);
+
+    const onDone = () => {
+      if (typeof App !== 'undefined' && App.showToast) {
+        App.showToast('✓ Solution copied to clipboard');
+      }
+    };
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(cleanText).then(onCopied).catch(() => {
-        fallbackCopy(cleanText, onCopied);
-      });
+      navigator.clipboard.writeText(cleanText).then(onDone).catch(() => fallbackCopy(cleanText, onDone));
     } else {
-      fallbackCopy(cleanText, onCopied);
+      fallbackCopy(cleanText, onDone);
+    }
+  }
+
+  function insertCardToBoard(msgId) {
+    const contentEl = document.getElementById(`content-${msgId}`);
+    if (!contentEl) return;
+
+    const textToPaste = cleanTextForBoard(contentEl.innerText);
+
+    const size = (typeof Canvas !== 'undefined' && Canvas.getCanvasSize) ? Canvas.getCanvasSize() : { W: 1200, H: 800 };
+    const posX = Math.max(60, Math.round(size.W * 0.1));
+    const posY = Math.max(60, Math.round(size.H * 0.12));
+
+    let textColor = '#ffffff';
+    try {
+      const boardColor = (typeof Canvas !== 'undefined' && Canvas.getBoardColor) ? Canvas.getBoardColor() : null;
+      if (boardColor && (boardColor.id === 'white' || boardColor.id === 'light')) {
+        textColor = '#0f172a';
+      }
+    } catch(e) {}
+
+    if (typeof Canvas !== 'undefined' && Canvas.addTextShape) {
+      Canvas.addTextShape(posX, posY, textToPaste, textColor, 18);
+    }
+
+    if (typeof App !== 'undefined') {
+      if (App.setTool) App.setTool('select');
+      if (App.showToast) App.showToast('✓ Solution pasted on whiteboard');
+    }
+
+    closePanel();
+  }
+
+  function speakCardText(msgId) {
+    const contentEl = document.getElementById(`content-${msgId}`);
+    if (!contentEl || !window.speechSynthesis) return;
+
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+      return;
+    }
+
+    const text = cleanTextForBoard(contentEl.innerText);
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+
+    if (typeof App !== 'undefined' && App.showToast) {
+      App.showToast('🔊 Speaking solution... (Click again to stop)');
     }
   }
 
@@ -550,35 +617,6 @@ CRITICAL FORMATTING RULES:
       document.body.removeChild(ta);
       if (callback) callback();
     } catch(e) {}
-  }
-
-  function insertOntoBoard() {
-    if (!lastGeneratedText) return;
-
-    const cleanBoardText = cleanTextForBoard(lastGeneratedText);
-
-    const size = (typeof Canvas !== 'undefined' && Canvas.getCanvasSize) ? Canvas.getCanvasSize() : { W: 1200, H: 800 };
-    const posX = Math.max(60, Math.round(size.W * 0.12));
-    const posY = Math.max(60, Math.round(size.H * 0.12));
-
-    let textColor = '#ffffff';
-    try {
-      const boardColor = (typeof Canvas !== 'undefined' && Canvas.getBoardColor) ? Canvas.getBoardColor() : null;
-      if (boardColor && (boardColor.id === 'white' || boardColor.id === 'light')) {
-        textColor = '#0f172a';
-      }
-    } catch(e) {}
-
-    if (typeof Canvas !== 'undefined' && Canvas.addTextShape) {
-      Canvas.addTextShape(posX, posY, cleanBoardText, textColor, 18);
-    }
-
-    if (typeof App !== 'undefined') {
-      if (App.setTool) App.setTool('select');
-      if (App.showToast) App.showToast('✓ Pasted onto whiteboard');
-    }
-
-    closePanel();
   }
 
   // ─────────────────────────────────────────────
@@ -644,11 +682,16 @@ CRITICAL FORMATTING RULES:
     const cleaned = cleanMathText(text);
     let html = escapeHtml(cleaned);
 
-    html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-    html = html.replace(/\*(.*?)\*/g, '<i>$1</i>');
-    html = html.replace(/^### (.*$)/gim, '<h4 class="ai-h4">$1</h4>');
-    html = html.replace(/^## (.*$)/gim, '<h3 class="ai-h3">$1</h3>');
-    html = html.replace(/^# (.*$)/gim, '<h2 class="ai-h2">$1</h2>');
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="ai-strong">$1</strong>');
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    html = html.replace(/^### (.*$)/gim, '<h4 class="ai-step-title">$1</h4>');
+    html = html.replace(/^## (.*$)/gim, '<h3 class="ai-section-title">$1</h3>');
+    html = html.replace(/^# (.*$)/gim, '<h2 class="ai-main-title-md">$1</h2>');
+
+    // Numbered step badges: e.g. Step 1: or 1.
+    html = html.replace(/(Step \d+:?)/gi, '<span class="ai-step-badge">$1</span>');
+
+    // Line breaks
     html = html.replace(/\n/g, '<br>');
     return html;
   }
@@ -668,67 +711,46 @@ CRITICAL FORMATTING RULES:
   }
 
   function escapeHtml(str) {
-    return str.replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;')
-              .replace(/'/g, '&#039;');
+    return (str || '').replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;')
+                      .replace(/"/g, '&quot;')
+                      .replace(/'/g, '&#039;');
   }
 
-  function showResult(tag, text) {
-    lastGeneratedText = text;
-    const sec = document.getElementById('ai-result-section');
-    const tagEl = document.getElementById('ai-result-tag');
-    const bodyEl = document.getElementById('ai-result-body');
-    if (!sec || !bodyEl) return;
-
-    if (tagEl) tagEl.textContent = tag || 'PiyushDhara AI Answer';
-    bodyEl.innerHTML = formatMarkdownForPreview(text);
-
-    sec.classList.remove('hidden');
-    sec.scrollIntoView({ behavior: 'smooth' });
-  }
-
-  function showError(msg) {
-    const sec = document.getElementById('ai-result-section');
-    const tagEl = document.getElementById('ai-result-tag');
-    const bodyEl = document.getElementById('ai-result-body');
-    if (!sec || !bodyEl) return;
-
-    if (tagEl) tagEl.textContent = 'Notice / Error';
-    bodyEl.innerHTML = `<div class="ai-error-box">${escapeHtml(msg)}</div>`;
-    sec.classList.remove('hidden');
-  }
-
-  function clearResult() {
-    lastGeneratedText = '';
-    const sec = document.getElementById('ai-result-section');
-    if (sec) sec.classList.add('hidden');
-  }
-
-  function clearInput() {
-    const input = document.getElementById('ai-solve-input');
-    if (input) {
-      input.value = '';
-      input.focus();
-    }
-  }
-
-  function setLoading(loading, text = 'PiyushDhara AI is thinking') {
+  function setLoading(loading, title = 'PiyushDhara AI is generating steps...') {
     isLoading = loading;
-    const el = document.getElementById('ai-loading');
-    const txt = document.getElementById('ai-loading-text');
-    if (txt) txt.textContent = text;
-    if (el) el.classList.toggle('hidden', !loading);
-
+    const card = document.getElementById('ai-loading-card');
+    const titleEl = document.getElementById('ai-loading-title');
     const btn = document.getElementById('btn-ai-solve-run');
+
+    if (titleEl) titleEl.textContent = title;
+    if (card) card.classList.toggle('hidden', !loading);
     if (btn) btn.disabled = loading;
+  }
+
+  function setMode(mode) {
+    activeMode = mode;
+    document.querySelectorAll('.ai-tab-chip').forEach(chip => {
+      chip.classList.toggle('active', chip.getAttribute('data-mode') === mode);
+    });
   }
 
   function setPrompt(text) {
     const input = document.getElementById('ai-solve-input');
     if (input) {
       input.value = text;
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+      input.focus();
+    }
+  }
+
+  function clearInput() {
+    const input = document.getElementById('ai-solve-input');
+    if (input) {
+      input.value = '';
+      input.style.height = 'auto';
       input.focus();
     }
   }
@@ -742,13 +764,16 @@ CRITICAL FORMATTING RULES:
     if (d) {
       d.classList.remove('hidden');
       const input = document.getElementById('ai-solve-input');
-      setTimeout(() => input?.focus(), 150);
+      setTimeout(() => input?.focus(), 120);
     }
   }
 
   function closePanel() {
     const d = document.getElementById('ai-drawer');
     if (d) d.classList.add('hidden');
+    if (window.speechSynthesis && window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+    }
   }
 
   function togglePanel() {
@@ -783,23 +808,42 @@ CRITICAL FORMATTING RULES:
     const input = document.getElementById('ai-settings-key');
     if (input) {
       setApiKey(input.value);
-      if (typeof App !== 'undefined' && App.showToast) App.showToast('✓ API Key saved');
+      if (typeof App !== 'undefined' && App.showToast) {
+        App.showToast('✓ Gemini API Key saved');
+      }
       const panel = document.getElementById('ai-settings-panel');
       if (panel) panel.classList.add('hidden');
     }
   }
 
-  // Aliases for compatibility
+  // Aliases & backwards-compatibility
   function runSolve() { askQuestion(); }
   function runChapterQuiz() { askQuestion(); }
   function runVisionSolve() { askQuestion(); }
-  function switchTab() {}
+  function switchTab(mode) { setMode(mode); }
+  function copyResult() {
+    if (chatHistory.length > 0) {
+      const last = chatHistory[chatHistory.length - 1].answer;
+      navigator.clipboard.writeText(cleanTextForBoard(last));
+    }
+  }
+  function insertOntoBoard() {
+    if (chatHistory.length > 0) {
+      const last = chatHistory[chatHistory.length - 1].answer;
+      const size = (typeof Canvas !== 'undefined' && Canvas.getCanvasSize) ? Canvas.getCanvasSize() : { W: 1200, H: 800 };
+      if (typeof Canvas !== 'undefined' && Canvas.addTextShape) {
+        Canvas.addTextShape(100, 100, cleanTextForBoard(last), '#ffffff', 18);
+      }
+      closePanel();
+    }
+  }
+  function clearResult() { clearChatHistory(); }
 
   // Auto initialize on DOM ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', ensureDrawerMounted);
   } else {
-    setTimeout(ensureDrawerMounted, 100);
+    setTimeout(ensureDrawerMounted, 80);
   }
 
   // Global key listener for Escape to close AI panel
@@ -821,11 +865,17 @@ CRITICAL FORMATTING RULES:
     runChapterQuiz,
     runVisionSolve,
     switchTab,
+    setMode,
+    copyCardText,
+    insertCardToBoard,
+    speakCardText,
     insertOntoBoard,
     copyResult,
     clearResult,
     clearInput,
     setPrompt,
+    clearChatHistory,
+    toggleVoiceInput,
     toggleSettings,
     toggleKeyVisibility,
     saveSettings
@@ -834,3 +884,4 @@ CRITICAL FORMATTING RULES:
 
 // Attach to window
 window.AIAssistant = AIAssistant;
+
