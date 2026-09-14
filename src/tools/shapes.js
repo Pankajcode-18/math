@@ -696,33 +696,30 @@ const Shapes = (() => {
         const lineH = fs * 1.35;
         const boxW  = s.w ? Math.max(60, s.w) : naturalMaxW;
 
-        // Wrap words to fit box width if box is constrained
+        // Always wrap text to fit box width for smooth resize reflow
         let lines = [];
-        if (s.w && s.w < naturalMaxW) {
-          rawLines.forEach(line => {
-            if (!line || ctx.measureText(line).width <= boxW) {
-              lines.push(line);
-              return;
+        rawLines.forEach(line => {
+          if (!line || ctx.measureText(line).width <= boxW) {
+            lines.push(line);
+            return;
+          }
+          const words = line.split(' ');
+          let curLine = words[0] || '';
+          for (let w = 1; w < words.length; w++) {
+            const test = curLine + ' ' + words[w];
+            if (ctx.measureText(test).width <= boxW) {
+              curLine = test;
+            } else {
+              lines.push(curLine);
+              curLine = words[w];
             }
-            const words = line.split(' ');
-            let curLine = words[0] || '';
-            for (let w = 1; w < words.length; w++) {
-              const test = curLine + ' ' + words[w];
-              if (ctx.measureText(test).width <= boxW) {
-                curLine = test;
-              } else {
-                lines.push(curLine);
-                curLine = words[w];
-              }
-            }
-            lines.push(curLine);
-          });
-        } else {
-          lines = rawLines;
-        }
+          }
+          lines.push(curLine);
+        });
 
         const contentH = lines.length * lineH;
-        const totalH = Math.max(s.h || 0, contentH);
+        // Height always matches content — auto-shrinks when wider, auto-grows when narrower
+        const totalH = contentH;
 
         s.w = boxW;
         s.h = totalH;

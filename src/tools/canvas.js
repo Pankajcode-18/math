@@ -2481,20 +2481,19 @@ const Canvas = (() => {
         if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.showNoteContextToolbar(s);
         return;
       } else if (s.type === 'text-block') {
+        // Only resize width — height auto-flows from word-wrapped content
         let newW = resizing.origW;
-        let newH = resizing.origH;
         if (hId.includes('r')) newW = Math.max(80, resizing.origW + dx);
         if (hId.includes('l')) {
           newW = Math.max(80, resizing.origW - dx);
           s.x = resizing.origX + dx;
         }
-        if (hId.includes('b')) newH = Math.max(30, resizing.origH + dy);
-        if (hId.includes('t')) {
-          newH = Math.max(30, resizing.origH - dy);
-          s.y = resizing.origY + dy;
-        }
         s.w = newW;
-        s.h = newH;
+        // Clear cached height so shapes.js recalculates from content wrapping
+        s.h = undefined;
+        renderShapes();
+        updateShapeDimensionBar(s);
+        return;
       } else if (s.type === 'measured-line' || s.type === 'arrow') {
         if (hId === 'p1') { s.x1 = Math.round(pos.x); s.y1 = Math.round(pos.y); }
         if (hId === 'p2') { s.x2 = Math.round(pos.x); s.y2 = Math.round(pos.y); }
