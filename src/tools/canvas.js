@@ -2426,21 +2426,20 @@ const Canvas = (() => {
         if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.showNoteContextToolbar(s);
         return;
       } else if (s.type === 'text-block') {
-        const origSize = resizing.origFontSize;
-        const origW = Math.max(resizing.origW, 40);
-        let scale = 1;
-        if (hId === 'br')      scale = (origW + dx) / origW;
-        else if (hId === 'bl') scale = (origW - dx) / origW;
-        else if (hId === 'tr') scale = (origW + dx) / origW;
-        else if (hId === 'tl') scale = (origW - dx) / origW;
-        else if (hId === 'mr') scale = (origW + dx) / origW;
-        else if (hId === 'ml') scale = (origW - dx) / origW;
-        else if (hId === 'bc') scale = (resizing.origH + dy) / Math.max(resizing.origH, 20);
-        else if (hId === 'tc') scale = (resizing.origH - dy) / Math.max(resizing.origH, 20);
-
-        s.fontSize = Math.max(8, Math.min(160, Math.round(origSize * Math.max(0.15, scale))));
-        if (hId.includes('l')) s.x = resizing.origX + dx;
-        if (hId.includes('t')) s.y = resizing.origY + dy;
+        let newW = resizing.origW;
+        let newH = resizing.origH;
+        if (hId.includes('r')) newW = Math.max(80, resizing.origW + dx);
+        if (hId.includes('l')) {
+          newW = Math.max(80, resizing.origW - dx);
+          s.x = resizing.origX + dx;
+        }
+        if (hId.includes('b')) newH = Math.max(30, resizing.origH + dy);
+        if (hId.includes('t')) {
+          newH = Math.max(30, resizing.origH - dy);
+          s.y = resizing.origY + dy;
+        }
+        s.w = newW;
+        s.h = newH;
       } else if (s.type === 'measured-line' || s.type === 'arrow') {
         if (hId === 'p1') { s.x1 = Math.round(pos.x); s.y1 = Math.round(pos.y); }
         if (hId === 'p2') { s.x2 = Math.round(pos.x); s.y2 = Math.round(pos.y); }

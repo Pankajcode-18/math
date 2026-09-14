@@ -684,25 +684,53 @@ const Shapes = (() => {
         const fs         = s.fontSize || 24;
         const fontFam    = s.fontFamily || 'Noto Sans, sans-serif';
         const isBold     = s.bold ? '700' : '500';
-        const lines      = (s.text || '').split('\n');
-        if (!lines.length || (lines.length === 1 && !lines[0])) break;
+        const rawLines   = (s.text || '').split('\n');
+        if (!rawLines.length || (rawLines.length === 1 && !rawLines[0])) break;
 
         ctx.font         = `${isBold} ${fs}px ${fontFam}`;
         ctx.textAlign    = s.align || 'left';
         ctx.textBaseline = 'top';
 
-        // Measure widest line for bounds
-        const maxW = Math.max(...lines.map(l => ctx.measureText(l).width), 40);
+        // Measure natural line widths
+        const naturalMaxW = Math.max(...rawLines.map(l => ctx.measureText(l).width), 40);
         const lineH = fs * 1.35;
-        const totalH = lines.length * lineH;
+        const boxW  = s.w ? Math.max(60, s.w) : naturalMaxW;
 
-        s.w = maxW;
+        // Wrap words to fit box width if box is constrained
+        let lines = [];
+        if (s.w && s.w < naturalMaxW) {
+          rawLines.forEach(line => {
+            if (!line || ctx.measureText(line).width <= boxW) {
+              lines.push(line);
+              return;
+            }
+            const words = line.split(' ');
+            let curLine = words[0] || '';
+            for (let w = 1; w < words.length; w++) {
+              const test = curLine + ' ' + words[w];
+              if (ctx.measureText(test).width <= boxW) {
+                curLine = test;
+              } else {
+                lines.push(curLine);
+                curLine = words[w];
+              }
+            }
+            lines.push(curLine);
+          });
+        } else {
+          lines = rawLines;
+        }
+
+        const contentH = lines.length * lineH;
+        const totalH = Math.max(s.h || 0, contentH);
+
+        s.w = boxW;
         s.h = totalH;
 
         // Background highlight if enabled
         if (s.highlight) {
           ctx.fillStyle = s.highlightColor || 'rgba(254, 240, 138, 0.45)';
-          ctx.fillRect(s.x - 4, s.y - 2, maxW + 8, totalH + 4);
+          ctx.fillRect(s.x - 4, s.y - 2, boxW + 8, totalH + 4);
         }
 
         // Draw each line
@@ -711,25 +739,25 @@ const Shapes = (() => {
         ctx.fillStyle = s.color || '#ffffff';
         lines.forEach((line, i) => {
           let drawX = s.x;
-          if (s.align === 'center') drawX = s.x + maxW / 2;
-          else if (s.align === 'right') drawX = s.x + maxW;
+          if (s.align === 'center') drawX = s.x + boxW / 2;
+          else if (s.align === 'right') drawX = s.x + boxW;
           ctx.fillText(line, drawX, s.y + i * lineH);
         });
         ctx.restore();
 
-        // Exact 4 corner handles + solid blue border matching screenshot
+        // 4 corner handles + solid border if selected
         if (s.selected) {
           ctx.save();
           ctx.strokeStyle = '#3b82f6';
           ctx.lineWidth   = 1.5;
-          ctx.strokeRect(s.x - 4, s.y - 4, maxW + 8, totalH + 8);
+          ctx.strokeRect(s.x - 4, s.y - 4, boxW + 8, totalH + 8);
 
           // 4 corner circles
           const corners = [
             [s.x - 4, s.y - 4],
-            [s.x + maxW + 4, s.y - 4],
+            [s.x + boxW + 4, s.y - 4],
             [s.x - 4, s.y + totalH + 4],
-            [s.x + maxW + 4, s.y + totalH + 4]
+            [s.x + boxW + 4, s.y + totalH + 4]
           ];
           corners.forEach(([cx, cy]) => {
             ctx.fillStyle = '#ffffff';
