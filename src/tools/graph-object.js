@@ -1455,6 +1455,26 @@ const GraphObject = (() => {
     `;
   }
 
+  // ── Complete Standard General Equations ─────────────────────────────────────
+  function getGeneralEquation(tmpl) {
+    switch (tmpl) {
+      case 'linear': return 'y = mx + c';
+      case 'quadratic':
+      case 'quadratic_vertical': return 'y = ax² + bx + c';
+      case 'quadratic_horizontal': return 'x = ay² + by + c';
+      case 'cubic': return 'y = ax³ + bx² + cx + d';
+      case 'exp': return 'y = a·bˣ + c';
+      case 'ln': return 'y = a·ln(x - h) + k';
+      case 'trig_sin': return 'y = a·sin(bx + c) + d';
+      case 'trig_csc': return 'y = a·csc(bx + c) + d';
+      case 'trig_cos': return 'y = a·cos(bx + c) + d';
+      case 'trig_sec': return 'y = a·sec(bx + c) + d';
+      case 'trig_tan': return 'y = a·tan(bx + c) + d';
+      case 'trig_cot': return 'y = a·cot(bx + c) + d';
+      default: return 'y = f(x)';
+    }
+  }
+
   // ── Math Educational Insights Helper ──────────────────────────────────────
   function computeMathInsights(tmpl, params) {
     const round = (num) => Math.round(num * 100) / 100;
@@ -1648,6 +1668,9 @@ const GraphObject = (() => {
       currentFormula = `y = ${formatTrig(fnName, params.a !== undefined ? params.a : 1, params.b !== undefined ? params.b : 1, params.c || 0, params.d || 0)}`;
     }
 
+    const generalEq = getGeneralEquation(tmpl);
+    const isModified = !!g.isParamModified;
+    const displayEq = isModified ? currentFormula : generalEq;
     const insights = computeMathInsights(tmpl, params);
     const round = (num) => Math.round(num * 100) / 100;
 
@@ -1806,9 +1829,21 @@ const GraphObject = (() => {
 
       <!-- Dynamic Live Equation Header Banner -->
       <div style="background:rgba(56,189,248,0.08);border:1px solid rgba(56,189,248,0.25);border-radius:12px;padding:14px 18px;text-align:center;margin-bottom:12px;">
-        <div style="font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Current Active Equation</div>
-        <div id="gos-live-formula" style="font-size:24px;font-weight:800;color:#38bdf8;font-family:monospace;letter-spacing:0.02em;">
-          ${currentFormula}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span id="gos-equation-status" style="font-size:10.5px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.06em;">
+            ${isModified ? 'Current Active Equation' : 'Complete Standard Equation'}
+          </span>
+          <span style="font-size:11px;font-weight:700;color:#facc15;background:rgba(250,204,21,0.12);padding:2px 8px;border-radius:4px;border:1px solid rgba(250,204,21,0.3);font-family:monospace;">
+            ${generalEq}
+          </span>
+        </div>
+        <div id="gos-live-formula" style="font-size:26px;font-weight:800;color:#38bdf8;font-family:monospace;letter-spacing:0.02em;">
+          ${displayEq}
+        </div>
+        <div id="gos-formula-sub" style="font-size:11.5px;color:#94a3b8;margin-top:5px;">
+          ${isModified 
+            ? `Standard Form: <strong style="color:#facc15;font-family:monospace;">${generalEq}</strong>` 
+            : `<span style="color:#64748b;">Complete standard equation displayed initially • Adjust parameters below to transform</span>`}
         </div>
         <div id="gos-math-insights" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px;">
           ${insights.map(item => `
@@ -2069,6 +2104,7 @@ const GraphObject = (() => {
     }
 
     editingGraph.params = defaultParams;
+    editingGraph.isParamModified = false;
     editingGraph.equations = [
       { id: Date.now(), label: isXEquals ? 'x(y)' : 'f₁(x)', expr: initialExpr, color: initialColor, lineWidth: 2.8, visible: true, isXEquals }
     ];
@@ -2089,6 +2125,7 @@ const GraphObject = (() => {
     if (!editingGraph.params) editingGraph.params = {};
     val = Math.round(Number(val) * 1000) / 1000;
     editingGraph.params[key] = val;
+    editingGraph.isParamModified = true;
 
     // Update input box if not currently actively focused
     const valInput = document.getElementById(`gos-val-${key}`);
@@ -2133,6 +2170,7 @@ const GraphObject = (() => {
     if (!isNaN(parsed)) {
       if (!editingGraph.params) editingGraph.params = {};
       editingGraph.params[key] = parsed;
+      editingGraph.isParamModified = true;
 
       const card = document.getElementById(`gos-card-${key}`);
       if (card) {
@@ -2205,6 +2243,17 @@ const GraphObject = (() => {
     const liveBanner = document.getElementById('gos-live-formula');
     if (liveBanner) {
       liveBanner.textContent = isXEquals ? `x = ${formatted}` : `y = ${formatted}`;
+    }
+
+    const eqStatus = document.getElementById('gos-equation-status');
+    if (eqStatus) {
+      eqStatus.textContent = 'Current Active Equation';
+    }
+
+    const formulaSub = document.getElementById('gos-formula-sub');
+    if (formulaSub) {
+      const generalEq = getGeneralEquation(tmpl);
+      formulaSub.innerHTML = `Standard Form: <strong style="color:#facc15;font-family:monospace;">${generalEq}</strong>`;
     }
 
     const insightsContainer = document.getElementById('gos-math-insights');
