@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eduverse — Institution Management Portal</title>
+  <meta name="description" content="Role-based access management prototype for Eduverse Institute. Manage departments, teachers, subjects, and Smart Board sessions.">
+
+  <!-- RBAC Stylesheet (isolated — does NOT affect main app) -->
+  <link rel="stylesheet" href="modules/rbac/rbac.css">
+</head>
+<body>
+
+  <!-- ══════════════════════════════════════════════
+       RBAC Module Root
+       All UI is rendered inside this div.
+       Nothing outside this div is touched.
+  ═══════════════════════════════════════════════ -->
+  <div id="rbac-root"></div>
+
+  <!-- RBAC Scripts (load order: data first, then UI) -->
+  <script src="modules/rbac/data.js"></script>
+  <script src="modules/rbac/rbac.js"></script>
+
+</body>
+</html>
