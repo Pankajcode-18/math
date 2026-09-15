@@ -337,6 +337,7 @@ const Drawing = (() => {
     const editor = document.createElement('div');
     editor.id = 'text-editor-box';
     editor.className = 'active-board-textbox';
+    editor._shape = existingShape;
     editor.style.cssText = `
       position: absolute; left: ${screenPos.x - 4}px; top: ${screenPos.y - 4}px;
       min-width: ${initialW}px; z-index: 110;
@@ -350,10 +351,15 @@ const Drawing = (() => {
     `;
 
     editor.innerHTML = `
-      <span class="tb-corner-handle tl"></span>
-      <span class="tb-corner-handle tr"></span>
-      <span class="tb-corner-handle bl"></span>
-      <span class="tb-corner-handle br"></span>
+      <div class="tb-quick-size-bar" title="Text font size">
+        <button type="button" class="tb-qbtn tb-qbtn-dec" title="Decrease font size (Ctrl+- or Alt+Down)">A−</button>
+        <span class="tb-qsize-val" id="tb-quick-size-val">${fontSize}</span>
+        <button type="button" class="tb-qbtn tb-qbtn-inc" title="Increase font size (Ctrl++ or Alt+Up)">A+</button>
+      </div>
+      <span class="tb-corner-handle tl" data-handle="tl"></span>
+      <span class="tb-corner-handle tr" data-handle="tr"></span>
+      <span class="tb-corner-handle bl" data-handle="bl"></span>
+      <span class="tb-corner-handle br" data-handle="br"></span>
     `;
 
     const ta = document.createElement('textarea');
@@ -389,7 +395,92 @@ const Drawing = (() => {
       ta.style.height = ta.scrollHeight + 'px';
     }
 
-    // Clicking anywhere inside the editor box focuses the textarea cleanly
+    // Show and link rich floating toolbar to the active editor
+    if (typeof Canvas !== 'undefined' && Canvas.updateFloatingToolbar) {
+      Canvas.updateFloatingToolbar();
+    }
+
+    // Quick size buttons on the text box
+    const btnDec = editor.querySelector('.tb-qbtn-dec');
+    const btnInc = editor.querySelector('.tb-qbtn-inc');
+    if (btnDec) {
+      btnDec.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (typeof Canvas !== 'undefined' && Canvas.adjustFontSize) {
+          Canvas.adjustFontSize(-2);
+        }
+      });
+    }
+    if (btnInc) {
+      btnInc.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (typeof Canvas !== 'undefined' && Canvas.adjustFontSize) {
+          Canvas.adjustFontSize(2);
+        }
+      });
+    }
+
+    // Interactive corner resize handle dragging for font & width scaling
+    editor.querySelectorAll('.tb-corner-handle').forEach(handleEl => {
+      handleEl.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        handleEl.setPointerCapture(e.pointerId);
+
+        const hId = handleEl.dataset.handle;
+        const startX = e.clientX;
+        const startW = editor.offsetWidth;
+        const startFontSize = parseInt(ta.style.fontSize) || fontSize;
+        const startLeft = editor.offsetLeft;
+
+        function onPointerMove(ev) {
+          const dx = ev.clientX - startX;
+          let newW = startW;
+
+          if (hId.includes('r')) newW = Math.max(80, startW + dx);
+          if (hId.includes('l')) {
+            newW = Math.max(80, startW - dx);
+            editor.style.left = (startLeft + (startW - newW)) + 'px';
+          }
+          editor.style.width = newW + 'px';
+          editor.style.minWidth = newW + 'px';
+
+          // Proportional font size scaling
+          const scale = newW / Math.max(40, startW);
+          const newFontSize = Math.max(8, Math.min(240, Math.round(startFontSize * scale)));
+          ta.style.fontSize = newFontSize + 'px';
+          ta.style.minHeight = (newFontSize + 10) + 'px';
+          ta.style.height = 'auto';
+          ta.style.height = ta.scrollHeight + 'px';
+
+          const qVal = document.getElementById('tb-quick-size-val');
+          if (qVal) qVal.textContent = newFontSize;
+
+          const sizeInp = document.getElementById('tft-size-input');
+          if (sizeInp) sizeInp.value = newFontSize;
+
+          if (typeof Canvas !== 'undefined' && Canvas.updateFloatingToolbar) {
+            Canvas.updateFloatingToolbar();
+          }
+        }
+
+        function onPointerUp(ev) {
+          try { handleEl.releasePointerCapture(ev.pointerId); } catch(err) {}
+          handleEl.removeEventListener('pointermove', onPointerMove);
+          handleEl.removeEventListener('pointerup', onPointerUp);
+          handleEl.removeEventListener('pointercancel', onPointerUp);
+          ta.focus();
+        }
+
+        handleEl.addEventListener('pointermove', onPointerMove);
+        handleEl.addEventListener('pointerup', onPointerUp);
+        handleEl.addEventListener('pointercancel', onPointerUp);
+      });
+    });
+
+    // Clicking inside the editor box focuses the textarea
     editor.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       ta.focus();
@@ -455,7 +546,6 @@ const Drawing = (() => {
           }
         }
       } else if (existingShape) {
-        // If user deleted all text, cleanly remove shape
         Canvas.saveHistory();
         const allShapes = (Canvas.getShapesRef ? Canvas.getShapesRef() : Canvas.getShapes()) || [];
         const idx = allShapes.indexOf(existingShape);
@@ -484,17 +574,41 @@ const Drawing = (() => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         commitAndClose(true);
+        return;
+      }
+      // Keyboard shortcuts for quick font size adjustment
+      if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        if (typeof Canvas !== 'undefined' && Canvas.adjustFontSize) Canvas.adjustFontSize(2);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_')) {
+        e.preventDefault();
+        if (typeof Canvas !== 'undefined' && Canvas.adjustFontSize) Canvas.adjustFontSize(-2);
+        return;
+      }
+      if (e.altKey && e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (typeof Canvas !== 'undefined' && Canvas.adjustFontSize) Canvas.adjustFontSize(2);
+        return;
+      }
+      if (e.altKey && e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (typeof Canvas !== 'undefined' && Canvas.adjustFontSize) Canvas.adjustFontSize(-2);
+        return;
       }
     });
 
     ta.addEventListener('input', () => {
       ta.style.height = 'auto';
       ta.style.height = ta.scrollHeight + 'px';
-      // Native smooth typing without triggering board renders or toolbar reflows
+      if (typeof Canvas !== 'undefined' && Canvas.updateFloatingToolbar) {
+        Canvas.updateFloatingToolbar();
+      }
     });
 
     function outsideHandler(ev) {
-      if (ev.target.closest('#text-floating-toolbar') || ev.target.closest('#tft-more-dropdown')) {
+      if (ev.target.closest('#text-floating-toolbar') || ev.target.closest('#tft-more-dropdown') || ev.target.closest('.tb-quick-size-bar')) {
         return;
       }
       if (!editor.contains(ev.target)) {

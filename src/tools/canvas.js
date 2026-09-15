@@ -866,7 +866,16 @@ const Canvas = (() => {
   }
 
   function getActiveTextTarget() {
-    if (document.getElementById('text-editor-box')) return null;
+    const editor = document.getElementById('text-editor-box');
+    const ta = document.getElementById('active-textbox-input');
+    if (editor && ta) {
+      return {
+        type: 'editor',
+        editor: editor,
+        ta: ta,
+        shape: (editor._shape || (selected && selected.type === 'text-block' ? selected : null))
+      };
+    }
     if (selected && selected.type === 'text-block') return { type: 'shape', shape: selected };
     return null;
   }
@@ -883,18 +892,35 @@ const Canvas = (() => {
     }
     bar.classList.remove('hidden');
 
-    const s = target.shape;
-    const curFont = s.fontFamily || 'Noto Sans, sans-serif';
-    const curSize = s.fontSize || 24;
-    const curBold = !!s.bold;
-    const curColor = s.color || '#ffffff';
-    const curHighlight = !!s.highlight;
-    const curLocked = !!s.locked;
+    let curFont, curSize, curBold, curColor, curHighlight, curLocked;
+    let sp, screenW, screenH;
 
-    const b = (typeof Shapes !== 'undefined' && Shapes.getBounds) ? Shapes.getBounds(s) : { x: s.x, y: s.y, w: s.w || 100, h: s.h || 40 };
-    const sp = boardToScreen(b.x, b.y);
-    const screenW = (b.w || 100) * zoomLevel;
-    const screenH = (b.h || 40) * zoomLevel;
+    if (target.type === 'editor') {
+      const ta = target.ta;
+      curFont = ta.style.fontFamily || (target.shape?.fontFamily) || 'Noto Sans, sans-serif';
+      curSize = parseInt(ta.style.fontSize) || (target.shape?.fontSize) || 24;
+      curBold = ta.style.fontWeight === '700';
+      curColor = ta.style.color || (target.shape?.color) || '#ffffff';
+      curHighlight = target.editor.dataset.highlight === 'true';
+      curLocked = false;
+
+      sp = { x: target.editor.offsetLeft, y: target.editor.offsetTop };
+      screenW = target.editor.offsetWidth;
+      screenH = target.editor.offsetHeight;
+    } else {
+      const s = target.shape;
+      curFont = s.fontFamily || 'Noto Sans, sans-serif';
+      curSize = s.fontSize || 24;
+      curBold = !!s.bold;
+      curColor = s.color || '#ffffff';
+      curHighlight = !!s.highlight;
+      curLocked = !!s.locked;
+
+      const b = (typeof Shapes !== 'undefined' && Shapes.getBounds) ? Shapes.getBounds(s) : { x: s.x, y: s.y, w: s.w || 100, h: s.h || 40 };
+      sp = boardToScreen(b.x, b.y);
+      screenW = (b.w || 100) * zoomLevel;
+      screenH = (b.h || 40) * zoomLevel;
+    }
 
     // Synchronize UI widgets
     const selFont = document.getElementById('tft-font-select');
@@ -960,6 +986,14 @@ const Canvas = (() => {
     if (!target) return;
     if (target.type === 'editor') {
       target.ta.style.fontSize = sz + 'px';
+      target.ta.style.minHeight = (sz + 10) + 'px';
+      target.ta.style.height = 'auto';
+      target.ta.style.height = target.ta.scrollHeight + 'px';
+      if (target.shape) {
+        target.shape.fontSize = sz;
+      }
+      const qVal = document.getElementById('tb-quick-size-val');
+      if (qVal) qVal.textContent = sz;
     } else {
       saveHistory();
       target.shape.fontSize = sz;
@@ -2481,18 +2515,28 @@ const Canvas = (() => {
         if (typeof StickyNotesTool !== 'undefined') StickyNotesTool.showNoteContextToolbar(s);
         return;
       } else if (s.type === 'text-block') {
-        // Only resize width — height auto-flows from word-wrapped content
         let newW = resizing.origW;
-        if (hId.includes('r')) newW = Math.max(80, resizing.origW + dx);
+        if (hId.includes('r')) newW = Math.max(60, resizing.origW + dx);
         if (hId.includes('l')) {
-          newW = Math.max(80, resizing.origW - dx);
+          newW = Math.max(60, resizing.origW - dx);
           s.x = resizing.origX + dx;
         }
         s.w = newW;
-        // Clear cached height so shapes.js recalculates from content wrapping
+
+        // Proportional font scaling when dragging corner handles (br, bl, tr, tl) or vertical handles (tc, bc)
+        if (hId === 'br' || hId === 'bl' || hId === 'tr' || hId === 'tl') {
+          const scale = newW / Math.max(20, resizing.origW);
+          s.fontSize = Math.max(8, Math.min(240, Math.round(resizing.origFontSize * scale)));
+        } else if (hId === 'bc' || hId === 'tc') {
+          const factor = hId === 'bc' ? (1 + dy / Math.max(40, resizing.origH)) : (1 - dy / Math.max(40, resizing.origH));
+          s.fontSize = Math.max(8, Math.min(240, Math.round(resizing.origFontSize * factor)));
+        }
+
+        // Clear cached height so shapes.js recalculates from content wrapping & new font size
         s.h = undefined;
         renderShapes();
         updateShapeDimensionBar(s);
+        updateFloatingToolbar();
         return;
       } else if (s.type === 'measured-line' || s.type === 'arrow') {
         if (hId === 'p1') { s.x1 = Math.round(pos.x); s.y1 = Math.round(pos.y); }

@@ -2402,18 +2402,73 @@ body.board-fullscreen #fs-page-control {
 
 .tb-corner-handle {
   position: absolute;
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   background: #ffffff;
-  border: 1.5px solid #64748b;
+  border: 1.5px solid #3b82f6;
   border-radius: 50%;
-  pointer-events: none;
+  pointer-events: auto;
   box-sizing: border-box;
+  z-index: 10;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  transition: transform 0.12s ease;
 }
-.tb-corner-handle.tl { top: -5px; left: -5px; }
-.tb-corner-handle.tr { top: -5px; right: -5px; }
-.tb-corner-handle.bl { bottom: -5px; left: -5px; }
-.tb-corner-handle.br { bottom: -5px; right: -5px; }
+.tb-corner-handle:hover {
+  transform: scale(1.3);
+  background: #38bdf8;
+}
+.tb-corner-handle.tl { top: -6px; left: -6px; cursor: nwse-resize; }
+.tb-corner-handle.tr { top: -6px; right: -6px; cursor: nesw-resize; }
+.tb-corner-handle.bl { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.tb-corner-handle.br { bottom: -6px; right: -6px; cursor: nwse-resize; }
+
+.tb-quick-size-bar {
+  position: absolute;
+  top: -34px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  border-radius: 18px;
+  padding: 2px 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  z-index: 120;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tb-qbtn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #38bdf8;
+  font-size: 13px;
+  font-weight: 700;
+  width: 26px;
+  height: 22px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+.tb-qbtn:hover {
+  background: #3b82f6;
+  color: #ffffff;
+  transform: scale(1.1);
+}
+.tb-qsize-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f1f5f9;
+  padding: 0 4px;
+  min-width: 24px;
+  text-align: center;
+  font-family: var(--mono, monospace);
+}
 
 /* Formula badge */
 #formula-badge{position:absolute;z-index:20;background:rgba(8,15,31,.97);border:1px solid var(--border-mid);border-radius:9px;padding:9px 13px;pointer-events:none;min-width:175px;box-shadow:0 6px 32px rgba(0,0,0,.55);transition:opacity .2s}
